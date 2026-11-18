@@ -64,7 +64,7 @@ export function createMindServer(host_public = false, port = 8080) {
             const preferred = conn?.settings?.minecraft_version;
             const candidates = [];
             if (preferred && preferred !== 'auto') candidates.push(preferred);
-            candidates.push('1.21.8');
+            candidates.push('26.1');
 
             // Lazy import to avoid ESM/CJS conflicts
             const mod = await import('minecraft-assets');
@@ -125,7 +125,7 @@ export function createMindServer(host_public = false, port = 8080) {
             for (let key in settings_spec) {
                 if (!(key in settings)) {
                     if (settings_spec[key].required) {
-                        callback({ success: false, error: `Setting ${key} is required` });
+                        callback({ success: false, error: `缺少必填设置：${settings_spec[key].label || key}` });
                         return;
                     }
                     else {
@@ -140,7 +140,7 @@ export function createMindServer(host_public = false, port = 8080) {
             }
             if (settings.profile?.name) {
                 if (settings.profile.name in agent_connections) {
-                    callback({ success: false, error: 'Agent already exists' });
+                    callback({ success: false, error: '机器人已存在' });
                     return;
                 }
                 let returned = await mindcraft.createAgent(settings);
@@ -153,8 +153,8 @@ export function createMindServer(host_public = false, port = 8080) {
                 agentsStatusUpdate();
             }
             else {
-                console.error('Agent name is required in profile');
-                callback({ success: false, error: 'Agent name is required in profile' });
+                console.error('配置文件中必须包含机器人名称');
+                callback({ success: false, error: '配置文件中必须包含机器人名称' });
             }
         });
 
@@ -162,7 +162,7 @@ export function createMindServer(host_public = false, port = 8080) {
             if (agent_connections[agentName]) {
                 callback({ settings: agent_connections[agentName].settings });
             } else {
-                callback({ error: `Agent '${agentName}' not found.` });
+                callback({ error: `未找到机器人“${agentName}”` });
             }
         });
 

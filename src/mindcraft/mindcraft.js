@@ -29,10 +29,10 @@ export async function init(host_public=false, port=8080, auto_open_ui=true) {
 
 export async function createAgent(settings) {
     if (!settings.profile.name) {
-        console.error('Agent name is required in profile');
+        console.error('配置文件中必须包含机器人名称');
         return {
             success: false,
-            error: 'Agent name is required in profile'
+            error: '配置文件中必须包含机器人名称'
         };
     }
     settings = JSON.parse(JSON.stringify(settings));
@@ -61,7 +61,7 @@ export async function createAgent(settings) {
         agentProcess.start(load_memory, init_message, agentIndex);
         agent_processes[settings.profile.name] = agentProcess;
     } catch (error) {
-        console.error(`Error creating agent ${agent_name}:`, error);
+        console.error(`创建机器人 ${agent_name} 时出错:`, error);
         destroyAgent(agent_name);
         return {
             success: false,

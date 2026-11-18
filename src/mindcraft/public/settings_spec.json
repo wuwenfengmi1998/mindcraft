@@ -1,140 +1,182 @@
 {
     "profile": {
         "type": "object",
+        "label": "配置文件",
         "required": true,
-        "description": "The profile object to use, including name, prompts, and examples"
+        "description": "用于启动机器人的配置文件对象，包含名称、提示词和示例"
     },
     "minecraft_version": {
         "type": "string",
-        "description": "The version of Minecraft to use. Set to 'auto' to automatically detect the version.",
+        "label": "Minecraft 版本",
+        "description": "Minecraft 版本。设置为 'auto' 可自动检测版本。",
         "default": "auto"
     },
     "host": {
         "type": "string",
-        "description": "The minecraft server host address to connect to",
+        "label": "服务器地址",
+        "description": "要连接的 Minecraft 服务器地址",
         "default": "127.0.0.1"
     },
     "port": {
         "type": "number",
-        "description": "The minecraft server port to connect to. -1 for auto-detect.",
+        "label": "服务器端口",
+        "description": "要连接的 Minecraft 服务器端口；-1 表示自动检测。",
         "default": 55916
     },
     "auth": {
         "type": "string",
-        "description": "The authentication method to use",
+        "label": "认证方式",
+        "description": "使用的认证方式",
         "default": "offline",
-        "options": ["offline", "microsoft"]
+        "options": ["offline", "microsoft"],
+        "option_labels": {
+            "offline": "离线",
+            "microsoft": "微软账户"
+        }
     },
     "base_profile": {
         "type": "string",
-        "description": "Allowed values: survival, assistant, creative, god_mode. Each has fine tuned settings for different game modes.",
+        "label": "基础配置",
+        "description": "可选值：survival、assistant、creative、god_mode。每种基础配置针对不同游戏模式进行了调优。",
         "default": "survival",
-        "options": ["survival", "assistant", "creative", "god_mode"]
+        "options": ["survival", "assistant", "creative", "god_mode"],
+        "option_labels": {
+            "survival": "生存",
+            "assistant": "助手",
+            "creative": "创造",
+            "god_mode": "上帝模式"
+        }
     },
     "load_memory": {
         "type": "boolean",
-        "description": "Whether to load bot's previous memory",
+        "label": "加载记忆",
+        "description": "是否加载机器人上一次运行保存的记忆",
         "default": false
     },
     "init_message": {
         "type": "string",
-        "description": "The initial message to send to the bot",
+        "label": "初始消息",
+        "description": "机器人启动时发送给它的初始消息",
         "default": "Respond with hello world and your name"
     },
     "only_chat_with": {
         "type": "array",
-        "description": "List of agents to only chat with. If empty, the bot will chat publicly",
+        "label": "仅与指定玩家聊天",
+        "description": "仅与列表中的玩家聊天。留空时机器人会公开聊天",
         "default": []
     },
     "speak": {
         "type": "boolean",
-        "description": "Whether to enable text-to-speech reading on the host machine",
+        "label": "语音播报",
+        "description": "是否在主机上启用文本转语音播报",
         "default": false
     },
     "language": {
         "type": "string",
-        "description": "The language to automatically translate to and from using google translate",
+        "label": "翻译语言",
+        "description": "使用 Google 翻译自动互译的目标语言",
         "default": "en"
     },
     "allow_vision": {
         "type": "boolean",
-        "description": "Whether to allow vision capabilities",
+        "label": "启用视觉",
+        "description": "是否允许机器人使用视觉能力",
         "default": false
     },
     "blocked_actions": {
         "type": "array",
-        "description": "List of actions that are blocked",
+        "label": "禁用动作",
+        "description": "被禁用的动作列表",
         "default": ["!checkBlueprint", "!checkBlueprintLevel", "!getBlueprint", "!getBlueprintLevel"]
     },
     "relevant_docs_count": {
         "type": "number",
-        "description": "Number of relevant function documents to include in the prompt for LLM code writing",
+        "label": "相关文档数量",
+        "description": "为 LLM 编写代码时，提示词中包含的相关函数文档数量",
         "default": 5
     },
     "max_messages": {
         "type": "number",
-        "description": "Maximum number of recent messages to keep in context for LLM",
+        "label": "最大消息数",
+        "description": "LLM 上下文中保留的最近消息数量上限",
         "default": 15
     },
     "num_examples": {
         "type": "number",
-        "description": "Number of examples to select to help prompt better LLM responses",
+        "label": "示例数量",
+        "description": "用于帮助 LLM 更好响应的示例数量",
         "default": 2
     },
     "max_commands": {
         "type": "number",
-        "description": "Maximum number of commands allowed in consecutive responses. -1 for no limit",
+        "label": "最大连续命令数",
+        "description": "连续响应中允许使用的最大命令数；-1 表示不限制",
         "default": -1
     },
     "narrate_behavior": {
         "type": "boolean",
-        "description": "Whether to openly chat automatic behavior like 'Picking up item!'",
+        "label": "播报自动行为",
+        "description": "是否公开播报自动行为，例如“正在拾取物品！”",
         "default": true
     },
     "log_all_prompts": {
         "type": "boolean",
-        "description": "Whether to log all prompts to file. Can be very verbose.",
+        "label": "记录所有提示词",
+        "description": "是否将所有提示词写入日志文件；可能产生大量内容。",
         "default": false
     },
     "show_command_syntax": {
         "type": "string",
-        "description": "Whether to show \"full\" command syntax, \"shortened\" command syntax, or \"none\"",
+        "label": "命令语法显示",
+        "description": "显示完整命令语法、简写命令语法，或隐藏命令语法",
         "default": "full",
-        "options": ["full", "shortened", "none"]
+        "options": ["full", "shortened", "none"],
+        "option_labels": {
+            "full": "完整",
+            "shortened": "简写",
+            "none": "隐藏"
+        }
     },
     "chat_ingame": {
         "type": "boolean",
-        "description": "Whether to show bot's chat messages in game chat",
+        "label": "游戏内聊天",
+        "description": "是否在游戏聊天中显示机器人的消息",
         "default": true
     },
     "chat_bot_messages": {
         "type": "boolean",
-        "description": "Whether to publicly chat messages to and from other bots",
+        "label": "机器人间公开消息",
+        "description": "是否公开显示机器人之间发送的消息",
         "default": true
     },
     "render_bot_view": {
         "type": "boolean",
-        "description": "Whether to render bot view for user observation. Does not give bot vision.",
+        "label": "渲染机器人视角",
+        "description": "是否渲染机器人视角供用户观察；不会让机器人获得视觉能力。",
         "default": false
     },
     "allow_insecure_coding": {
         "type": "boolean",
-        "description": "Whether to allow newAction command that let's LLM write/run code on host computer. Despite sandboxxing, it is potentially insecure.",
+        "label": "允许不安全代码",
+        "description": "是否允许 newAction 命令让 LLM 在主机上编写/运行代码；即使有沙箱仍可能存在安全风险。",
         "default": false
     },
     "code_timeout_mins": {
         "type": "number",
-        "description": "Number of minutes to allow code execution. -1 for no timeout",
+        "label": "代码执行超时（分钟）",
+        "description": "允许代码执行的最长时间（分钟）；-1 表示不限制",
         "default": -1
     },
     "task": {
         "type": "object",
-        "description": "The task object to give the agent on start. If null, the agent will not have a task.",
+        "label": "任务",
+        "description": "启动时分配给机器人的任务对象；null 表示没有任务。",
         "default": null
     },
     "spawn_timeout": {
         "type": "number",
-        "description": "Number of seconds allowed for the bot to spawn before throwing an error. Increase when spawning takes a while.",
+        "label": "出生超时（秒）",
+        "description": "机器人出生前允许等待的秒数；生成较慢时可调大。",
         "default": 30
     }
 }

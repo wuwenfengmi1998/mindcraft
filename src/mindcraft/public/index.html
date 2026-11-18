@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-    <title>Mindcraft</title>
+    <title>Mindcraft 控制台</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body {
@@ -94,7 +94,8 @@
             white-space: nowrap;
         }
         .setting-wrapper input[type="text"],
-        .setting-wrapper input[type="number"] {
+        .setting-wrapper input[type="number"],
+        .setting-wrapper select {
             flex: 1 1 0;
             background: #262626;
             border: 1px solid #555;
@@ -306,7 +307,6 @@
             border-radius: 4px;
             background: #3a3a3a;
             color: #cccccc;
-            text-transform: lowercase;
         }
         .status-badge.online { color: #4CAF50; }
         .status-badge.offline { color: #f44336; }
@@ -374,8 +374,8 @@
 <body>
     <div class="title-row">
         <div class="title-left">
-            <h1 style="margin: 0;">Mindcraft</h1>
-            <span id="msStatus" class="status-badge offline">mindserver offline</span>
+            <h1 style="margin: 0;">Mindcraft 控制台</h1>
+            <span id="msStatus" class="status-badge offline">MindServer 离线</span>
         </div>
         <div class="title-spacer"></div>
     </div>
@@ -383,11 +383,11 @@
 
     <div class="page-footer">
         <div>
-            <button id="openCreateAgentBtn" class="start-btn">New Agent</button>
+            <button id="openCreateAgentBtn" class="start-btn">新建机器人</button>
         </div>
         <div style="display:flex; gap:12px;">
-            <button class="stop-btn" onclick="disconnectAllAgents()">Disconnect All Agents</button>
-            <button class="stop-btn" onclick="confirmShutdown()">Full Shutdown</button>
+            <button class="stop-btn" onclick="disconnectAllAgents()">断开所有机器人</button>
+            <button class="stop-btn" onclick="confirmShutdown()">完全关闭</button>
         </div>
     </div>
 
@@ -395,22 +395,22 @@
     <div id="createAgentModal" class="modal-backdrop">
         <div class="modal">
             <div class="modal-header">
-                <h2 style="margin:0;">Create Agent</h2>
-                <button id="closeCreateAgentBtn" class="modal-close-btn">Close</button>
+                <h2 style="margin:0;">创建机器人</h2>
+                <button id="closeCreateAgentBtn" class="modal-close-btn">关闭</button>
             </div>
             <div class="modal-body">
                 <div id="createAgentSection">
-                    <div id="profileStatus" style="margin:6px 0;">Profile: Not uploaded</div>
+                    <div id="profileStatus" style="margin:6px 0;">配置文件：未上传</div>
                     <div id="settingsForm"></div>
                     <div id="createError" style="color:#f44336;margin-top:10px;"></div>
                     <input type="file" id="profileFileInput" accept=".json,application/json" style="display:none">
                 </div>
             </div>
             <div class="modal-footer">
-                <div class="footer-left" id="footerStatus">Configure settings, then upload a profile and create the agent.</div>
+                <div class="footer-left" id="footerStatus">配置设置，然后上传配置文件并创建机器人。</div>
                 <div class="footer-actions">
-                    <button id="uploadProfileBtn" class="start-btn">Upload Profile</button>
-                    <button id="submitCreateAgentBtn" class="start-btn" disabled>Create Agent</button>
+                    <button id="uploadProfileBtn" class="start-btn">上传配置文件</button>
+                    <button id="submitCreateAgentBtn" class="start-btn" disabled>创建机器人</button>
                 </div>
             </div>
         </div>
@@ -420,8 +420,8 @@
     <div id="agentSettingsModal" class="modal-backdrop">
         <div class="modal">
             <div class="modal-header">
-                <h2 id="agentSettingsTitle" style="margin:0;">Agent Settings</h2>
-                <button id="closeAgentSettingsBtn" class="modal-close-btn">Close</button>
+                <h2 id="agentSettingsTitle" style="margin:0;">机器人设置</h2>
+                <button id="closeAgentSettingsBtn" class="modal-close-btn">关闭</button>
             </div>
             <div class="modal-body">
                 <div id="agentSettingsSection">
@@ -430,10 +430,10 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <div class="footer-left" id="agentSettingsFooter">Modify settings then apply to restart the agent.</div>
+                <div class="footer-left" id="agentSettingsFooter">修改设置后应用并重启机器人。</div>
                 <div class="footer-actions">
-                    <button id="discardAgentSettingsBtn" class="stop-btn" style="background:#777;">Discard Changes</button>
-                    <button id="applyAgentSettingsBtn" class="start-btn" disabled>Apply & Restart</button>
+                    <button id="discardAgentSettingsBtn" class="stop-btn" style="background:#777;">放弃更改</button>
+                    <button id="applyAgentSettingsBtn" class="start-btn" disabled>应用并重启</button>
                 </div>
             </div>
         </div>
@@ -448,6 +448,154 @@
         const agentLastMessage = {};
         const inventoryOpen = {};
         let currentAgents = [];
+
+        const ACTION_LABELS = {
+            newAction: '自定义代码动作',
+            stop: '停止',
+            stfu: '停止回复',
+            restart: '重启',
+            clearChat: '清空聊天记录',
+            goToPlayer: '前往玩家',
+            followPlayer: '跟随玩家',
+            goToCoordinates: '前往坐标',
+            searchForBlock: '寻找方块',
+            searchForEntity: '寻找实体',
+            moveAway: '移开',
+            rememberHere: '记住当前位置',
+            goToRememberedPlace: '前往记忆位置',
+            givePlayer: '给予玩家物品',
+            consume: '食用或饮用',
+            equip: '装备物品',
+            putInChest: '放入箱子',
+            takeFromChest: '从箱子取出',
+            viewChest: '查看箱子',
+            discard: '丢弃物品',
+            collectBlocks: '收集方块',
+            craftRecipe: '合成物品',
+            smeltItem: '熔炼物品',
+            clearFurnace: '清空熔炉',
+            placeHere: '放置方块',
+            attack: '攻击',
+            attackPlayer: '攻击玩家',
+            goToBed: '上床睡觉',
+            stay: '原地待命',
+            setMode: '设置模式',
+            goal: '设置目标',
+            endGoal: '结束目标',
+            showVillagerTrades: '查看村民交易',
+            tradeWithVillager: '与村民交易',
+            startConversation: '开始对话',
+            endConversation: '结束对话',
+            lookAtPlayer: '看向玩家',
+            lookAtPosition: '看向坐标',
+            digDown: '向下挖掘',
+            goToSurface: '前往地表',
+            useOn: '对目标使用工具'
+        };
+
+        const MODE_LABELS = {
+            self_preservation: '自我保护模式',
+            unstuck: '脱困模式',
+            cowardice: '逃跑模式',
+            self_defense: '自卫模式',
+            hunting: '狩猎模式',
+            item_collecting: '拾取物品模式',
+            torch_placing: '放置火把模式',
+            elbow_room: '保持距离模式',
+            idle_staring: '空闲观察模式',
+            cheat: '作弊模式'
+        };
+
+        const NPC_LABELS = {
+            moveAway: '离开当前位置',
+            exitBuilding: '离开建筑',
+            returnHome: '返回家园',
+            bed: '上床睡觉'
+        };
+
+        const ITEM_GOAL_LABELS = {
+            explore: '探索',
+            next: '下一个目标'
+        };
+
+        const ACTIVITY_LABELS = {
+            Acting: '执行中',
+            Chatting: '聊天中',
+            Stopped: '已停止',
+            Thinking: '思考中',
+            Idle: '空闲'
+        };
+
+        const GAMEMODE_LABELS = {
+            survival: '生存',
+            creative: '创造',
+            adventure: '冒险',
+            spectator: '旁观'
+        };
+
+        function translateActionLabel(label) {
+            if (!label) return '空闲';
+            if (label === 'BuildGoal') return '建造目标';
+            const separator = label.indexOf(':');
+            if (separator !== -1) {
+                const prefix = label.slice(0, separator);
+                const name = label.slice(separator + 1);
+                const maps = {
+                    action: ACTION_LABELS,
+                    mode: MODE_LABELS,
+                    npc: NPC_LABELS,
+                    itemGoal: ITEM_GOAL_LABELS
+                };
+                if (maps[prefix] && maps[prefix][name]) return maps[prefix][name];
+            }
+            return label;
+        }
+
+        function translateActivity(current) {
+            if (!current) return '空闲';
+            if (current.startsWith('Chatting with ')) {
+                return `正在与 ${current.slice('Chatting with '.length)} 聊天`;
+            }
+            return ACTIVITY_LABELS[current] || translateActionLabel(current);
+        }
+
+        function translateGamemode(value) {
+            return GAMEMODE_LABELS[value] || value;
+        }
+
+        function createSettingInput(cfg, value) {
+            if (Array.isArray(cfg.options)) {
+                const select = document.createElement('select');
+                for (const option of cfg.options) {
+                    const optionEl = document.createElement('option');
+                    optionEl.value = option;
+                    optionEl.textContent = (cfg.option_labels && cfg.option_labels[option]) || option;
+                    select.appendChild(optionEl);
+                }
+                const initial = value ?? cfg.default;
+                if (initial !== undefined && initial !== null) {
+                    select.value = initial;
+                }
+                return select;
+            }
+            if (cfg.type === 'boolean') {
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.checked = value === undefined ? cfg.default === true : Boolean(value);
+                return input;
+            }
+            if (cfg.type === 'number') {
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.value = value ?? cfg.default ?? 0;
+                return input;
+            }
+            const input = document.createElement('input');
+            input.type = 'text';
+            const defVal = value ?? cfg.default ?? '';
+            input.value = typeof defVal === 'object' ? JSON.stringify(defVal) : defVal;
+            return input;
+        }
 
         // Item texture helpers (use PrismarineJS minecraft-assets CDN with graceful fallbacks)
         const BASE_ICON_VERSION_CANDIDATES = ['1.21.8'];
@@ -504,18 +652,18 @@
             `;
         }
         function emptySlotHTML(label) {
-            return `<div class="armor-slot empty" title="${label}: none"><span class="armor-placeholder">-</span></div>`;
+            return `<div class="armor-slot empty" title="${label}：无"><span class="armor-placeholder">-</span></div>`;
         }
 
         const statusEl = document.getElementById('msStatus');
         function updateStatus(connected) {
             if (!statusEl) return;
             if (connected) {
-                statusEl.textContent = 'MindServer online';
+                statusEl.textContent = 'MindServer 在线';
                 statusEl.classList.remove('offline');
                 statusEl.classList.add('online');
             } else {
-                statusEl.textContent = 'MindServer offline';
+                statusEl.textContent = 'MindServer 离线';
                 statusEl.classList.remove('online');
                 statusEl.classList.add('offline');
             }
@@ -558,25 +706,9 @@
                 const wrapper = document.createElement('div');
                 wrapper.className = 'setting-wrapper';
                 const label = document.createElement('label');
-                label.textContent = key;
-                label.title = cfg.description || '';
-                let input;
-                switch (cfg.type) {
-                    case 'boolean':
-                        input = document.createElement('input');
-                        input.type = 'checkbox';
-                        input.checked = cfg.default === true;
-                        break;
-                    case 'number':
-                        input = document.createElement('input');
-                        input.type = 'number';
-                        input.value = cfg.default;
-                        break;
-                    default:
-                        input = document.createElement('input');
-                        input.type = 'text';
-                        input.value = typeof cfg.default === 'object' ? JSON.stringify(cfg.default) : cfg.default;
-                }
+                label.textContent = cfg.label || key;
+                label.title = `${cfg.label || key}（${key}）：${cfg.description || ''}`;
+                const input = createSettingInput(cfg);
                 input.title = cfg.description || '';
                 input.id = `setting-${key}`;
                 wrapper.appendChild(label);
@@ -597,13 +729,13 @@
                 try {
                     profileData = JSON.parse(ev.target.result);
                     document.getElementById('submitCreateAgentBtn').disabled = false;
-                    document.getElementById('profileStatus').textContent = `Profile: ${profileData.name || 'Uploaded'}`;
+                    document.getElementById('profileStatus').textContent = `配置文件：${profileData.name || '已上传'}`;
                     document.getElementById('createError').textContent = '';
                 } catch (err) {
-                    document.getElementById('createError').textContent = 'Invalid profile JSON: ' + err.message;
+                    document.getElementById('createError').textContent = '配置文件 JSON 无效：' + err.message;
                     profileData = null;
                     document.getElementById('submitCreateAgentBtn').disabled = true;
-                    document.getElementById('profileStatus').textContent = 'Profile: Not uploaded';
+                    document.getElementById('profileStatus').textContent = '配置文件：未上传';
                 }
             };
             reader.readAsText(file);
@@ -629,12 +761,12 @@
             });
             socket.emit('create-agent', settings, res => {
                 if (!res.success) {
-                    document.getElementById('createError').textContent = res.error || 'Unknown error';
+                    document.getElementById('createError').textContent = res.error || '未知错误';
                 } else {
                     // reset on success
                     profileData = null;
                     document.getElementById('submitCreateAgentBtn').disabled = true;
-                    document.getElementById('profileStatus').textContent = 'Profile: Not uploaded';
+                    document.getElementById('profileStatus').textContent = '配置文件：未上传';
                     document.getElementById('createError').textContent = '';
                     hideCreateAgentModal();
                 }
@@ -670,7 +802,7 @@
                     const gp = st.gameplay || {};
                     if (healthEl && typeof gp.health === 'number') {
                         const hMax = typeof gp.healthMax === 'number' ? gp.healthMax : 20;
-                        healthEl.textContent = `health: ${gp.health}/${hMax}`;
+                        healthEl.textContent = `生命值：${gp.health}/${hMax}`;
                     }
                     const posEl = document.getElementById(`pos-${name}`);
                     const hunEl = document.getElementById(`hunger-${name}`);
@@ -682,37 +814,37 @@
                     const actionEl = document.getElementById(`action-${name}`);
                     if (posEl && gp.position) {
                         const p = gp.position;
-                        posEl.textContent = `x ${p.x}, y ${p.y}, z ${p.z}`;
+                        posEl.textContent = `坐标：x ${p.x}, y ${p.y}, z ${p.z}`;
                     }
                     if (hunEl && typeof gp.hunger === 'number') {
                         const fMax = typeof gp.hungerMax === 'number' ? gp.hungerMax : 20;
-                        hunEl.textContent = `hunger: ${gp.hunger}/${fMax}`;
+                        hunEl.textContent = `饥饿值：${gp.hunger}/${fMax}`;
                     }
-                    if (bioEl && gp.biome) bioEl.textContent = `biome: ${gp.biome}`;
-                    if (modeEl && gp.gamemode) modeEl.textContent = `gamemode: ${gp.gamemode}`;
+                    if (bioEl && gp.biome) bioEl.textContent = `生物群系：${gp.biome}`;
+                    if (modeEl && gp.gamemode) modeEl.textContent = `游戏模式：${translateGamemode(gp.gamemode)}`;
                     if (itemsEl && st.inventory) {
                         const used = st.inventory.stacksUsed ?? 0;
                         const total = st.inventory.totalSlots ?? 0;
-                        itemsEl.textContent = `inventory slots: ${used}/${total}`;
+                        itemsEl.textContent = `背包槽位：${used}/${total}`;
                     }
                     if (equippedEl && st.inventory?.equipment) {
                         const e = st.inventory.equipment;
-                        equippedEl.textContent = `equipped: ${e.mainHand || 'none'}`;
+                        equippedEl.textContent = `手持物品：${e.mainHand ? prettyItemName(e.mainHand) : '无'}`;
                     }
                     const armorEl = document.getElementById(`armor-${name}`);
                     if (armorEl && st.inventory?.equipment) {
                         const e = st.inventory.equipment;
                         const parts = [];
-                        parts.push(e.helmet ? iconHTMLForItem(e.helmet, `head: ${prettyItemName(e.helmet)}`, name) : emptySlotHTML('head'));
-                        parts.push(e.chestplate ? iconHTMLForItem(e.chestplate, `chest: ${prettyItemName(e.chestplate)}`, name) : emptySlotHTML('chest'));
-                        parts.push(e.leggings ? iconHTMLForItem(e.leggings, `legs: ${prettyItemName(e.leggings)}`, name) : emptySlotHTML('legs'));
-                        parts.push(e.boots ? iconHTMLForItem(e.boots, `feet: ${prettyItemName(e.boots)}`, name) : emptySlotHTML('feet'));
+                        parts.push(e.helmet ? iconHTMLForItem(e.helmet, `头部：${prettyItemName(e.helmet)}`, name) : emptySlotHTML('头部'));
+                        parts.push(e.chestplate ? iconHTMLForItem(e.chestplate, `胸部：${prettyItemName(e.chestplate)}`, name) : emptySlotHTML('胸部'));
+                        parts.push(e.leggings ? iconHTMLForItem(e.leggings, `腿部：${prettyItemName(e.leggings)}`, name) : emptySlotHTML('腿部'));
+                        parts.push(e.boots ? iconHTMLForItem(e.boots, `脚部：${prettyItemName(e.boots)}`, name) : emptySlotHTML('脚部'));
                         // Main hand for quick glance
-                        parts.push(e.mainHand ? iconHTMLForItem(e.mainHand, `main hand: ${prettyItemName(e.mainHand)}`, name) : emptySlotHTML('main hand'));
+                        parts.push(e.mainHand ? iconHTMLForItem(e.mainHand, `主手：${prettyItemName(e.mainHand)}`, name) : emptySlotHTML('主手'));
                         armorEl.innerHTML = `<div class="armor-grid">${parts.join('')}</div>`;
                     }
                     if (actionEl && st.action) {
-                        actionEl.textContent = `${st.action.current || 'Idle'}`;
+                        actionEl.textContent = `动作：${translateActivity(st.action.current || 'Idle')}`;
                         const _statusColors = { acting: '#4CAF50', chatting: '#42a5f5', thinking: '#9e9e9e', stopped: '#f44336', idle: '#888' };
                         actionEl.style.color = _statusColors[st.action.kind] || '';
                     }
@@ -739,7 +871,7 @@
                                 .join('');
                         } else {
                             invGrid.classList.add('empty');
-                            invGrid.innerHTML = '<div class="cell">(empty)</div>';
+                            invGrid.innerHTML = '<div class="cell">（空）</div>';
                         }
                     }
                 }
@@ -779,29 +911,13 @@
                 const wrapper = document.createElement('div');
                 wrapper.className = 'setting-wrapper';
                 const label = document.createElement('label');
-                label.textContent = key;
-                label.title = cfg.description || '';
-                let input;
-                switch (cfg.type) {
-                    case 'boolean':
-                        input = document.createElement('input');
-                        input.type = 'checkbox';
-                        input.checked = Boolean(settings[key]);
-                        break;
-                    case 'number':
-                        input = document.createElement('input');
-                        input.type = 'number';
-                        input.value = settings[key] ?? cfg.default ?? 0;
-                        break;
-                    default:
-                        input = document.createElement('input');
-                        input.type = 'text';
-                        const defVal = settings[key] ?? cfg.default ?? '';
-                        input.value = typeof defVal === 'object' ? JSON.stringify(defVal) : defVal;
-                }
+                label.textContent = cfg.label || key;
+                label.title = `${cfg.label || key}（${key}）：${cfg.description || ''}`;
+                const input = createSettingInput(cfg, settings[key]);
+                input.title = cfg.description || '';
                 input.id = `agent-setting-${key}`;
                 input.addEventListener('input', onAgentSettingsChanged);
-                if (input.type === 'checkbox') input.addEventListener('change', onAgentSettingsChanged);
+                input.addEventListener('change', onAgentSettingsChanged);
                 wrapper.appendChild(label);
                 wrapper.appendChild(input);
                 agentSettingsForm.appendChild(wrapper);
@@ -811,7 +927,7 @@
 
         function openAgentSettings(name) {
             currentAgentName = name;
-            agentSettingsTitle.textContent = `${name} Settings`;
+            agentSettingsTitle.textContent = `${name} 的设置`;
             fetchAgentSettings(name).then(settings => {
                 originalAgentSettings = JSON.parse(JSON.stringify(settings || {}));
                 buildAgentSettingsForm(settings || {});
@@ -907,45 +1023,45 @@
                     <div class="agent" id="agent-${agent.name}">
                         <div class="agent-grid">
                             <div class="cell title" style="grid-column: 1 / -1; display:flex; align-items:center; justify-content:space-between;">
-                                <span><span class="status-icon ${agent.in_game ? 'online' : 'offline'}">●</span>${agent.name}${agent.socket_connected && !agent.in_game ? '<span style="margin-left:6px;color:#f0ad4e;">joining...</span>' : ''}
-                                    <button class="gear-btn" title="Settings" onclick="openAgentSettings('${agent.name}')">⚙</button>
-                                    <button class="gear-btn" title="Inventory" onclick="toggleDetails('${agent.name}')">Inventory</button>
+                                <span><span class="status-icon ${agent.in_game ? 'online' : 'offline'}">●</span>${agent.name}${agent.socket_connected && !agent.in_game ? '<span style="margin-left:6px;color:#f0ad4e;">加入中...</span>' : ''}
+                                    <button class="gear-btn" title="设置" onclick="openAgentSettings('${agent.name}')">⚙</button>
+                                    <button class="gear-btn" title="背包" onclick="toggleDetails('${agent.name}')">背包</button>
                                 </span>
                             </div>
                             ${showViewer ? `<div class="cell" style="grid-row: span 3; padding:0;">${viewerHTML}</div>` : ''}
-                            <div class="cell" id="action-${agent.name}">action: -</div>
-                            <div class="cell" id="mode-${agent.name}">gamemode: -</div>
-                            <div class="cell" id="health-${agent.name}">health: -</div>
-                            <div class="cell" id="hunger-${agent.name}">hunger: -</div>
-                            <div class="cell" id="pos-${agent.name}">pos: -</div>
-                            <div class="cell" id="biome-${agent.name}">biome: -</div>
-                            <div class="cell" id="items-${agent.name}">inventory slots: -</div>
-                            <div class="cell" id="equipped-${agent.name}">equipped: -</div>
+                            <div class="cell" id="action-${agent.name}">动作：-</div>
+                            <div class="cell" id="mode-${agent.name}">游戏模式：-</div>
+                            <div class="cell" id="health-${agent.name}">生命值：-</div>
+                            <div class="cell" id="hunger-${agent.name}">饥饿值：-</div>
+                            <div class="cell" id="pos-${agent.name}">坐标：-</div>
+                            <div class="cell" id="biome-${agent.name}">生物群系：-</div>
+                            <div class="cell" id="items-${agent.name}">背包槽位：-</div>
+                            <div class="cell" id="equipped-${agent.name}">手持物品：-</div>
                             <div class="agent-inventory" id="inventorySection-${agent.name}" style="${invStyle} grid-column: 1 / -1;">
-                                <h3>Inventory</h3>
-                                <div class="cell" id="armor-${agent.name}" style="margin-bottom: 8px;">armor: -</div>
+                                <h3>背包</h3>
+                                <div class="cell" id="armor-${agent.name}" style="margin-bottom: 8px;">护甲：-</div>
                                 <div class="inventory-grid" id="inventory-${agent.name}"></div>
                             </div>
-                            <div id="lastMessage-${agent.name}" class="last-message" style="grid-column: 1 / -1;"><strong>Last Message:</strong> ${lastMessage}</div>
+                            <div id="lastMessage-${agent.name}" class="last-message" style="grid-column: 1 / -1;"><strong>最近消息：</strong> ${lastMessage}</div>
                         </div>
                         <div class="controls-row">
-                            <button class="start-btn" id="sendBtn-${agent.name}" disabled onclick="sendMessage('${agent.name}', document.getElementById('messageInput-${agent.name}').value)">Send</button>
-                            <input class="msg-input" type="text" id="messageInput-${agent.name}" placeholder="Enter message..." 
+                            <button class="start-btn" id="sendBtn-${agent.name}" disabled onclick="sendMessage('${agent.name}', document.getElementById('messageInput-${agent.name}').value)">发送</button>
+                            <input class="msg-input" type="text" id="messageInput-${agent.name}" placeholder="输入消息..."
                                 oninput="onMsgInputChange('${agent.name}')"
                                 onkeydown="if(event.key === 'Enter') document.getElementById('sendBtn-${agent.name}').click()"
                                 ${!agent.in_game ? 'disabled' : ''}>
-                            <button class="neutral-btn" onclick="sendMessage('${agent.name}', '!stop')" ${!agent.in_game ? 'disabled' : ''}>Stop Action</button>
-                            <button class="neutral-btn" onclick="sendMessage('${agent.name}', '!stay(-1)')" ${!agent.in_game ? 'disabled' : ''}>Stay Still</button>
-                            <button class="neutral-btn" onclick="restartAgent('${agent.name}')" ${!agent.in_game ? 'disabled' : ''}>Restart</button>
-                            <button class="neutral-btn" ${agent.in_game ? `onclick=\"disconnectAgent('${agent.name}')\"` : (agent.socket_connected ? 'disabled' : `onclick=\"startAgent('${agent.name}')\"`)}>${agent.in_game ? 'Disconnect' : (agent.socket_connected ? 'Connecting...' : 'Connect')}</button>
-                            <button class="stop-btn" onclick="destroyAgent('${agent.name}')">Remove</button>
+                            <button class="neutral-btn" onclick="sendMessage('${agent.name}', '!stop')" ${!agent.in_game ? 'disabled' : ''}>停止动作</button>
+                            <button class="neutral-btn" onclick="sendMessage('${agent.name}', '!stay(-1)')" ${!agent.in_game ? 'disabled' : ''}>原地待命</button>
+                            <button class="neutral-btn" onclick="restartAgent('${agent.name}')" ${!agent.in_game ? 'disabled' : ''}>重启</button>
+                            <button class="neutral-btn" ${agent.in_game ? `onclick=\"disconnectAgent('${agent.name}')\"` : (agent.socket_connected ? 'disabled' : `onclick=\"startAgent('${agent.name}')\"`)}>${agent.in_game ? '断开' : (agent.socket_connected ? '连接中...' : '连接')}</button>
+                            <button class="stop-btn" onclick="destroyAgent('${agent.name}')">移除</button>
                         </div>
                     </div>`;
         }
 
         async function renderAgents(agents) {
             if (!agents.length) {
-                agentsDiv.innerHTML = '<div class="agent">No agents connected</div>';
+                agentsDiv.innerHTML = '<div class="agent">暂无已连接的机器人</div>';
                 return;
             }
 
@@ -1055,7 +1171,7 @@
         function startAgent(n) { 
             const btn = document.querySelector(`button[onclick="startAgent('${n}')"]`);
             if (btn) {
-                btn.textContent = 'Connecting...';
+                btn.textContent = '连接中...';
                 btn.disabled = true;
                 // Re-enable after 10s if still disabled (agent failed to connect)
                 setTimeout(() => {
@@ -1064,7 +1180,7 @@
                     const stillWaiting = agentState ? (!agentState.in_game && !agentState.socket_connected) : true;
                     if (retryBtn && stillWaiting) {
                         retryBtn.disabled = false;
-                        retryBtn.textContent = 'Connect';
+                        retryBtn.textContent = '连接';
                     }
                 }, 10000);
             }
@@ -1076,7 +1192,7 @@
             socket.emit('stop-all-agents'); 
         }
         function confirmShutdown() {
-            if (confirm('Are you sure you want to perform a full shutdown?\nThis will stop all agents and close the server.')) {
+            if (confirm('确定要完全关闭吗？\n这将停止所有机器人并关闭服务器。')) {
                 socket.emit('shutdown');
             }
         }

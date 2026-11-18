@@ -7,7 +7,7 @@ export class Ollama {
         this.params = params;
         this.url = url || 'http://127.0.0.1:11434';
         this.chat_endpoint = '/api/chat';
-        this.embedding_endpoint = '/api/embeddings';
+        this.embedding_endpoint = '/api/embed';
     }
 
     async sendRequest(turns, systemMessage) {
@@ -70,9 +70,11 @@ export class Ollama {
 
     async embed(text) {
         let model = this.model_name || 'embeddinggemma';
-        let body = { model: model, input: text };
-        let res = await this.send(this.embedding_endpoint, body);
-        return res['embedding'];
+        let res = await this.send(this.embedding_endpoint, { model, input: text });
+        if (res?.embeddings?.[0]?.length) return res.embeddings[0];
+        res = await this.send('/api/embeddings', { model, prompt: text });
+        if (res?.embedding?.length) return res.embedding;
+        throw new Error('Ollama embedding request returned no embedding');
     }
 
     async send(endpoint, body) {

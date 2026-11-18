@@ -20,7 +20,7 @@ Do not connect this bot to public servers with coding enabled. This project allo
 # Getting Started
 ## Requirements
 
-- [Minecraft Java Edition](https://www.minecraft.net/en-us/store/minecraft-java-bedrock-edition-pc) (up to v1.21.11, recommend v1.21.6)
+- [Minecraft Java Edition](https://www.minecraft.net/en-us/store/minecraft-java-bedrock-edition-pc) (stable up to v26.1; v26.3 supported experimentally via `npm run setup:mc263`)
 - [Node.js Installed](https://nodejs.org/) (Node v18 or v20 LTS recommended. Node v24+ may cause issues with native dependencies)
 - At least one API key from a supported API provider. See [supported APIs](#model-customization). OpenAI is the default.
 
@@ -44,6 +44,28 @@ Do not connect this bot to public servers with coding enabled. This project allo
 6. Run `node main.js` from the installed directory
 
 If you encounter issues, check the [FAQ](https://github.com/mindcraft-bots/mindcraft/blob/main/FAQ.md) or find support on [discord](https://discord.gg/mp73p35dzC). We are currently not very responsive to github issues. To run tasks please refer to [Minecollab Instructions](minecollab.md#installation)
+
+## Minecraft 26.3 (Experimental)
+
+Minecraft 26.3 support is not yet published to npm. It currently relies on open upstream pull requests, so treat it as experimental:
+
+```bash
+npm run setup:mc263
+node main.js
+```
+
+The setup script installs pinned builds of mineflayer, node-minecraft-protocol, prismarine-chunk and prismarine-physics, then overlays the 26.3 minecraft-data branch and regenerates its data index. Verify the result with:
+
+```bash
+npm run verify:mc263
+```
+
+Only the 26.3 release is supported; 26.4 snapshots are not. `minecraft-assets` currently provides textures only up to 26.1, so textures for new 26.3 items fall back to a placeholder. To roll back:
+
+```bash
+npm run clean:modules
+npm install
+```
 
 
 # Configuration
