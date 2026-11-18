@@ -75,6 +75,7 @@ export function initBot(username) {
     const POSITION_THROTTLE_MS = 50;
     const originalWrite = bot._client.write.bind(bot._client);
     bot._client.write = function(name, data) {
+        if (bot.version === '26.3') return originalWrite(name, data);
         if (name === 'position' || name === 'position_look' || name === 'look') {
             const now = Date.now();
             if (now - lastPositionUpdate < POSITION_THROTTLE_MS) {

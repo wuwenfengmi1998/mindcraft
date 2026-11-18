@@ -36,8 +36,29 @@ const ERROR_DEFINITIONS = {
         keywords: ['flying', 'spam', 'speed'],
         msg: 'Kicked: Removed from server due to flying, spamming, or invalid movement.',
         isFatal: true
+    },
+    'invalid_movement': {
+        keywords: ['invalid_player_movement', 'invalid player movement', 'invalid move player packet', '非法玩家移动'],
+        msg: 'Kicked: Server rejected an invalid player movement packet.',
+        isFatal: true
     }
 };
+
+function stringifyReason(reason) {
+    if (!reason) return '';
+    if (typeof reason === 'string') return reason;
+    if (typeof reason.toString === 'function') {
+        try {
+            const text = reason.toString();
+            if (text && text !== '[object Object]') return text;
+        } catch (_) {}
+    }
+    try {
+        return JSON.stringify(reason);
+    } catch (_) {
+        return String(reason);
+    }
+}
 
 // Helper to log messages to console (once) and MindServer.
 export const log = (agentName, msg) => {
@@ -50,21 +71,24 @@ export const log = (agentName, msg) => {
 export function parseKickReason(reason) {
     if (!reason) return { type: 'unknown', msg: 'Unknown reason (Empty)', isFatal: true };
     
-    const raw = (typeof reason === 'string' ? reason : JSON.stringify(reason)).toLowerCase();
+    const reasonText = stringifyReason(reason);
+    const raw = reasonText.toLowerCase();
 
     // Search for keywords in definitions
     for (const [type, def] of Object.entries(ERROR_DEFINITIONS)) {
         if (def.keywords.some(k => raw.includes(k))) {
-            console.error(`Disconnected: ${raw}`);
+            console.error(`Disconnected: ${reasonText}`);
             return { type, msg: def.msg, isFatal: def.isFatal };
         }
     }
     
-    // Fallback: Extract text from JSON
-    let fallback = raw;
+    // Fallback: extract readable text from the ChatMessage object
+    let fallback = reasonText;
     try {
         const obj = typeof reason === 'string' ? JSON.parse(reason) : reason;
-        fallback = obj.translate || obj.text || (obj.value?.translate) || raw;
+        const extracted = obj.translate || obj.text || obj.value?.translate || obj.value?.text;
+        if (extracted) fallback = stringifyReason(extracted);
+        if (typeof fallback === 'object') fallback = JSON.stringify(fallback);
     } catch (_) {}
     
     return { type: 'other', msg: `Disconnected: ${fallback}`, isFatal: true };
