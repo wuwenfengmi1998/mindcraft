@@ -203,6 +203,10 @@ export function createMindServer(host_public = false, port = 8080) {
                 return;
             }
             console.log(`${curAgentName} sending message to ${agentName}: ${json.message}`);
+            if (!agent_connections[agentName].socket) {
+                console.warn(`Agent ${agentName} is not connected to MindServer`);
+                return;
+            }
             agent_connections[agentName].socket.emit('chat-message', curAgentName, json);
         });
 
@@ -210,13 +214,14 @@ export function createMindServer(host_public = false, port = 8080) {
             const agent = agent_connections[agentName];
             if (agent) {
                 agent.setSettings(settings);
-                agent.socket.emit('restart-agent');
+                if (agent.socket) agent.socket.emit('restart-agent');
             }
         });
 
         socket.on('restart-agent', (agentName) => {
             console.log(`Restarting agent: ${agentName}`);
-            agent_connections[agentName].socket.emit('restart-agent');
+            const agent = agent_connections[agentName];
+            if (agent?.socket) agent.socket.emit('restart-agent');
         });
 
         socket.on('stop-agent', (agentName) => {
@@ -256,7 +261,7 @@ export function createMindServer(host_public = false, port = 8080) {
         });
 
 		socket.on('send-message', (agentName, data) => {
-			if (!agent_connections[agentName]) {
+			if (!agent_connections[agentName]?.socket) {
 				console.warn(`Agent ${agentName} not in game, cannot send message via MindServer.`);
                 return;
 			}

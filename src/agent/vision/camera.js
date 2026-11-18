@@ -25,13 +25,18 @@ export class Camera extends EventEmitter {
         this.viewer = new Viewer(this.renderer);
         this._init().then(() => {
             this.emit('ready');
+        }).catch((err) => {
+            console.warn('Camera initialization failed:', err.message);
+            this.emit('error', err);
         })
     }
   
     async _init () {
         const botPos = this.bot.entity.position;
         const center = new Vec3(botPos.x, botPos.y+this.bot.entity.height, botPos.z);
-        this.viewer.setVersion(this.bot.version);
+        if (!this.viewer.setVersion(this.bot.version)) {
+            throw new Error(`prismarine-viewer does not support Minecraft ${this.bot.version}`);
+        }
         // Load world
         const worldView = new WorldView(this.bot.world, this.viewDistance, center);
         this.viewer.listen(worldView);

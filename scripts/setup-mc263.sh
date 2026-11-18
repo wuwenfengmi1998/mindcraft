@@ -20,8 +20,15 @@ npm install --no-save --ignore-scripts \
     "github:suisarbre/prismarine-chunk#${CHUNK_SHA}" \
     "github:DallasCarraher/prismarine-physics#${PHYSICS_SHA}"
 
+rm -rf node_modules/mineflayer/node_modules/minecraft-protocol
+
 if ! grep -q "updateLavaAvoidance" node_modules/mineflayer-pathfinder/index.js 2>/dev/null; then
     npx patch-package
+fi
+
+if ! node -e "process.exit(require('prismarine-viewer/viewer/lib/version').getVersion('26.3') === '26.3' ? 0 : 1)"; then
+    echo "prismarine-viewer 26.3 patch is missing. Run: npm run clean:modules && npm install && npm run setup:mc263" >&2
+    exit 1
 fi
 
 TMP_DIR="$(mktemp -d)"
@@ -37,6 +44,17 @@ mv "$TMP_DIR/minecraft-data-${DATA_SHA}" "$MCDATA_DIR"
 (
     cd node_modules/minecraft-data
     node bin/generate_data.js
+)
+
+node scripts/generate-viewer-assets-263.cjs
+
+if [ ! -x node_modules/.bin/webpack ] || ! node -e "require.resolve('assert/')" >/dev/null 2>&1; then
+    npm install --ignore-scripts
+fi
+
+(
+    cd node_modules/prismarine-viewer
+    NODE_OPTIONS=--max-old-space-size=4096 ../../node_modules/.bin/webpack --config ../../scripts/webpack-viewer-263.cjs
 )
 
 node scripts/verify-mc263.cjs

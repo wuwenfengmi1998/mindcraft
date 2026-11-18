@@ -54,18 +54,34 @@ npm run setup:mc263
 node main.js
 ```
 
-The setup script installs pinned builds of mineflayer, node-minecraft-protocol, prismarine-chunk and prismarine-physics, then overlays the 26.3 minecraft-data branch and regenerates its data index. Verify the result with:
+The setup script installs pinned builds of mineflayer, node-minecraft-protocol, prismarine-chunk and prismarine-physics, then overlays the 26.3 minecraft-data branch and regenerates its data index. It also generates 26.3 resources for prismarine-viewer from the 1.21.4 assets and rebuilds the browser viewer bundle. Verify the result with:
 
 ```bash
 npm run verify:mc263
 ```
 
-Only the 26.3 release is supported; 26.4 snapshots are not. `minecraft-assets` currently provides textures only up to 26.1, so textures for new 26.3 items fall back to a placeholder. To roll back:
+Only the 26.3 release is supported; 26.4 snapshots are not. `minecraft-assets` currently provides textures only up to 26.1, so textures for new 26.3 items fall back to a placeholder. Image analysis requires a vision-capable `vision_model` in the profile; DeepSeek itself cannot analyze images. To roll back:
 
 ```bash
 npm run clean:modules
 npm install
 ```
+
+## One-click Launch (macOS)
+
+Double-click `start.command`, or run:
+
+```bash
+npm start
+```
+
+The launcher checks Node/npm, the 26.3 dependencies, `keys.json`, Ollama embeddings, and the Minecraft port before starting. It uses `profiles/deepseek-ollama.json` by default. To use another profile:
+
+```bash
+MINDCRAFT_PROFILE=./profiles/gpt.json npm start
+```
+
+Use `npm run start:raw` to start `node main.js` without the preflight checks.
 
 
 # Configuration

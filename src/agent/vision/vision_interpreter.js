@@ -1,5 +1,6 @@
 import { Vec3 } from 'vec3';
 import { Camera } from "./camera.js";
+import { getVersion } from 'prismarine-viewer/viewer/lib/version.js';
 import fs from 'fs';
 
 export class VisionInterpreter {
@@ -8,7 +9,12 @@ export class VisionInterpreter {
         this.allow_vision = allow_vision;
         this.fp = './bots/'+agent.name+'/screenshots/';
         if (allow_vision) {
-            this.camera = new Camera(agent.bot, this.fp);
+            if (!getVersion(agent.bot.version)) {
+                console.warn(`Vision disabled: prismarine-viewer does not support Minecraft ${agent.bot.version}`);
+                this.allow_vision = false;
+            } else {
+                this.camera = new Camera(agent.bot, this.fp);
+            }
         }
     }
 

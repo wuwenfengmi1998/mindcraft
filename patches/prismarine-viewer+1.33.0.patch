@@ -1,7 +1,16 @@
 diff --git a/node_modules/prismarine-viewer/viewer/lib/entity/Entity.js b/node_modules/prismarine-viewer/viewer/lib/entity/Entity.js
-index 8945452..dab25be 100644
+index 8945452..2507bfa 100644
 --- a/node_modules/prismarine-viewer/viewer/lib/entity/Entity.js
 +++ b/node_modules/prismarine-viewer/viewer/lib/entity/Entity.js
+@@ -168,7 +168,7 @@ function getMesh (texture, jsonModel) {
+ 
+   const rootBones = []
+   for (const jsonBone of jsonModel.bones) {
+-    if (jsonBone.parent) bones[jsonBone.parent].add(bones[jsonBone.name])
++    if (jsonBone.parent && bones[jsonBone.parent]) bones[jsonBone.parent].add(bones[jsonBone.name])
+     else rootBones.push(bones[jsonBone.name])
+   }
+ 
 @@ -203,7 +203,7 @@ function getMesh (texture, jsonModel) {
  class Entity {
    constructor (version, type, scene) {
@@ -11,3 +20,26 @@ index 8945452..dab25be 100644
  
      this.mesh = new THREE.Object3D()
      for (const [name, jsonModel] of Object.entries(e.geometry)) {
+diff --git a/node_modules/prismarine-viewer/viewer/lib/version.js b/node_modules/prismarine-viewer/viewer/lib/version.js
+index 39e3ad8..a9006b8 100644
+--- a/node_modules/prismarine-viewer/viewer/lib/version.js
++++ b/node_modules/prismarine-viewer/viewer/lib/version.js
+@@ -1,4 +1,4 @@
+-const supportedVersions = ['1.8.8', '1.9.4', '1.10.2', '1.11.2', '1.12.2', '1.13.2', '1.14.4', '1.15.2', '1.16.1', '1.16.4', '1.17.1', '1.18.1', '1.19', '1.20.1', '1.21.1', '1.21.4']
++const supportedVersions = ['1.8.8', '1.9.4', '1.10.2', '1.11.2', '1.12.2', '1.13.2', '1.14.4', '1.15.2', '1.16.1', '1.16.4', '1.17.1', '1.18.1', '1.19', '1.20.1', '1.21.1', '1.21.4', '26.3']
+ 
+ const lastOfMajor = {}
+ for (const version of supportedVersions) {
+diff --git a/node_modules/prismarine-viewer/viewer/lib/viewer.js b/node_modules/prismarine-viewer/viewer/lib/viewer.js
+index db02d90..40633db 100644
+--- a/node_modules/prismarine-viewer/viewer/lib/viewer.js
++++ b/node_modules/prismarine-viewer/viewer/lib/viewer.js
+@@ -41,7 +41,7 @@ class Viewer {
+     version = getVersion(version)
+     if (version === null) {
+       const msg = `${version} is not supported`
+-      window.alert(msg)
++      if (typeof window !== 'undefined') window.alert(msg)
+       console.log(msg)
+       return false
+     }
