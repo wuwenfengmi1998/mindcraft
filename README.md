@@ -124,6 +124,17 @@ To install our models, install ollama and run the following terminal command:
 ollama pull sweaterdog/andy-4:micro-q8_0 && ollama pull embeddinggemma
 ```
 
+### Model Providers in the Web Console
+
+The web console can manage OpenAI-compatible model providers without editing `keys.json`:
+
+1. Click **模型供应商** at the bottom of the console.
+2. Add a provider with a display name, base URL, and API key.
+3. Click **拉取模型** (or **拉取全部模型**) to fetch the provider's `/models` list, with a fallback to `/v1/models`.
+4. When creating a bot, choose a provider and a model for chat, code, vision, and embedding. Code and vision models can be left empty to follow the chat model; embedding can be left empty to fall back automatically.
+
+Provider settings are stored in `providers.json` in the project root, which is excluded from git. API keys are only returned to the browser in masked form and are never written into bot profiles. Existing `keys.json` providers remain supported; models can still be entered manually when no provider is selected. Model selections can be changed later from a bot's ⚙ settings; applying changes restarts the bot.
+
 ## Online Servers
 To connect to online servers your bot will need an official Microsoft/Minecraft account. You can use your own personal one, but will need another account if you want to connect too and play with it. To connect, change these lines in `settings.js`:
 ```javascript

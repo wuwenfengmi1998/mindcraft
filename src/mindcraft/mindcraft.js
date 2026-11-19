@@ -32,10 +32,10 @@ export async function init(host_public=false, port=8080, auto_open_ui=true, manu
 
 export async function createAgent(settings) {
     if (!settings.profile.name) {
-        console.error('配置文件中必须包含机器人名称');
+        console.error('机器人配置中必须包含名称');
         return {
             success: false,
-            error: '配置文件中必须包含机器人名称'
+            error: '机器人配置中必须包含名称'
         };
     }
     settings = JSON.parse(JSON.stringify(settings));

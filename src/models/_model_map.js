@@ -1,6 +1,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { loadProviders } from '../utils/providers.js';
+import { OpenAICompatible } from './openai_compatible.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,6 +31,24 @@ const apiMap = await (async () => {
     }
     return map;
 })();
+
+// Register user-defined OpenAI-compatible providers from providers.json.
+// Each provider becomes its own API prefix, e.g. "custom-my-provider".
+for (const provider of loadProviders()) {
+    if (!provider.url) continue;
+    if (apiMap[provider.id]) {
+        console.warn(`Provider id "${provider.id}" conflicts with a built-in API and will be ignored.`);
+        continue;
+    }
+    const providerUrl = provider.url;
+    const providerKey = provider.apiKey || '';
+    apiMap[provider.id] = class extends OpenAICompatible {
+        static prefix = provider.id;
+        constructor(model_name, url, params) {
+            super(model_name, url || providerUrl, params, providerKey);
+        }
+    };
+}
 
 export function selectAPI(profile) {
     if (typeof profile === 'string' || profile instanceof String) {
@@ -64,11 +84,14 @@ export function selectAPI(profile) {
                 profile.api = 'qwen';
         }
         if (!profile.api) {
-            throw new Error('Unknown model:', profile.model);
+            throw new Error(`Unknown model: ${profile.model}`);
         }
     }
     if (!apiMap[profile.api]) {
-        throw new Error('Unknown api:', profile.api);
+        if (String(profile.api).startsWith('custom-')) {
+            throw new Error(`模型供应商“${profile.api}”不存在，请在控制台重新配置`);
+        }
+        throw new Error(`Unknown api: ${profile.api}`);
     }
     let model_name = profile.model.replace(profile.api + '/', ''); // remove prefix
     profile.model = model_name === "" ? null : model_name; // if model is empty, set to null
@@ -82,7 +105,7 @@ export function createModel(profile) {
         profile.model = null;
     }
     if (!apiMap[profile.api]) {
-        throw new Error('Unknown api:', profile.api);
+        throw new Error(`Unknown api: ${profile.api}`);
     }
     const model = new apiMap[profile.api](profile.model, profile.url, profile.params);
     return model;

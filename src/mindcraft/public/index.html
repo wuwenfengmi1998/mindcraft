@@ -108,6 +108,142 @@
         .setting-wrapper input[type="checkbox"] {
             transform: scale(1.2);
         }
+        .form-section-title {
+            margin: 4px 0 8px;
+            font-size: 0.95em;
+            font-weight: 600;
+            color: #e0e0e0;
+        }
+        .form-section-title:not(:first-child) {
+            margin-top: 14px;
+        }
+        .setting-wrapper.model-field label {
+            flex: 0 0 30%;
+        }
+        .model-field-control {
+            display: flex;
+            gap: 6px;
+            flex: 1 1 0;
+            min-width: 0;
+        }
+        .model-field-control > select {
+            flex: 1 1 0;
+            min-width: 0;
+        }
+        .profile-model-control {
+            flex: 1 1 0;
+            min-width: 0;
+        }
+        .profile-model-control input[type="text"],
+        .profile-model-control select {
+            width: 100%;
+            box-sizing: border-box;
+            background: #262626;
+            border: 1px solid #555;
+            color: #e0e0e0;
+            border-radius: 4px;
+            padding: 4px 6px;
+        }
+        .provider-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+        .provider-status {
+            font-size: 0.9em;
+            color: #bbb;
+        }
+        .provider-error {
+            color: #f44336;
+            margin-top: 8px;
+            font-size: 0.9em;
+        }
+        .provider-card {
+            background: #333;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+        }
+        .provider-card-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .provider-name {
+            font-weight: 600;
+            font-size: 1em;
+            color: #fff;
+        }
+        .provider-meta {
+            color: #aaa;
+            font-size: 0.85em;
+            word-break: break-all;
+        }
+        .provider-key {
+            color: #8bc34a;
+            font-family: monospace;
+        }
+        .provider-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        .provider-models {
+            margin-top: 8px;
+            max-height: 140px;
+            overflow: auto;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .model-chip {
+            background: #262626;
+            border: 1px solid #555;
+            border-radius: 12px;
+            padding: 2px 8px;
+            font-size: 0.8em;
+            color: #ddd;
+        }
+        .provider-form {
+            background: #333;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 12px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 8px;
+        }
+        .provider-form label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 0.9em;
+        }
+        .provider-form input {
+            background: #262626;
+            border: 1px solid #555;
+            color: #e0e0e0;
+            border-radius: 4px;
+            padding: 6px 8px;
+        }
+        .provider-form-actions {
+            grid-column: 1 / -1;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .provider-empty {
+            color: #aaa;
+            font-style: italic;
+            padding: 12px 0;
+        }
         .agent-view-container {
             width: 100%;
             height: 100%;
@@ -382,8 +518,9 @@
     <div id="agents"></div>
 
     <div class="page-footer">
-        <div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
             <button id="openCreateAgentBtn" class="start-btn">新建机器人</button>
+            <button id="openProviderManagerBtn" class="start-btn">模型供应商</button>
         </div>
         <div style="display:flex; gap:12px;">
             <button class="stop-btn" onclick="disconnectAllAgents()">断开所有机器人</button>
@@ -400,16 +537,16 @@
             </div>
             <div class="modal-body">
                 <div id="createAgentSection">
-                    <div id="profileStatus" style="margin:6px 0;">配置文件：未上传</div>
+                    <div class="form-section-title">机器人配置</div>
+                    <div id="profileForm"></div>
+                    <div class="form-section-title">其他设置</div>
                     <div id="settingsForm"></div>
                     <div id="createError" style="color:#f44336;margin-top:10px;"></div>
-                    <input type="file" id="profileFileInput" accept=".json,application/json" style="display:none">
                 </div>
             </div>
             <div class="modal-footer">
-                <div class="footer-left" id="footerStatus">配置设置并上传配置文件；创建后在机器人卡片上点击“连接”。</div>
+                <div class="footer-left" id="footerStatus">填写机器人名称和对话模型；创建后在机器人卡片上点击“连接”。</div>
                 <div class="footer-actions">
-                    <button id="uploadProfileBtn" class="start-btn">上传配置文件</button>
                     <button id="submitCreateAgentBtn" class="start-btn" disabled>创建机器人</button>
                 </div>
             </div>
@@ -425,6 +562,9 @@
             </div>
             <div class="modal-body">
                 <div id="agentSettingsSection">
+                    <div class="form-section-title">机器人模型</div>
+                    <div id="agentModelForm"></div>
+                    <div class="form-section-title">其他设置</div>
                     <div id="agentSettingsForm"></div>
                     <div id="agentSettingsError" style="color:#f44336;margin-top:10px;"></div>
                 </div>
@@ -439,11 +579,48 @@
         </div>
     </div>
 
+    <!-- Model Provider Modal -->
+    <div id="providerModal" class="modal-backdrop">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 style="margin:0;">模型供应商</h2>
+                <button id="closeProviderBtn" class="modal-close-btn">关闭</button>
+            </div>
+            <div class="modal-body">
+                <div class="provider-toolbar">
+                    <button id="addProviderBtn" class="start-btn">新增供应商</button>
+                    <button id="fetchAllProvidersBtn" class="start-btn">拉取全部模型</button>
+                    <span id="providerStatus" class="provider-status"></span>
+                </div>
+                <div class="provider-meta" style="margin-bottom:10px;">支持 OpenAI 兼容接口，拉取模型时会自动尝试 /models 和 /v1/models。</div>
+                <div class="provider-meta" style="margin-bottom:10px;">修改或删除供应商后，已运行的机器人需要重启才能生效。</div>
+                <div id="providerForm" class="provider-form" style="display:none;">
+                    <label>供应商名称
+                        <input id="provider-name" type="text" placeholder="例如 DeepSeek">
+                    </label>
+                    <label>API URL
+                        <input id="provider-url" type="text" placeholder="例如 https://api.deepseek.com/v1">
+                    </label>
+                    <label>API Key
+                        <input id="provider-apiKey" type="password" placeholder="本地服务可留空" autocomplete="new-password">
+                    </label>
+                    <div class="provider-form-actions">
+                        <button id="saveProviderBtn" class="start-btn">保存</button>
+                        <button id="cancelProviderBtn" class="stop-btn" style="background:#777;">取消</button>
+                        <span id="providerFormError" class="provider-error"></span>
+                    </div>
+                </div>
+                <div id="providerList"></div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const socket = io({ path: window.location.pathname + 'socket.io' })
         const agentsDiv = document.getElementById('agents');
         let settingsSpec = {};
-        let profileData = null;
+        let availableProviders = [];
+        let providerFormMode = null;
         const agentSettings = {};
         const agentLastMessage = {};
         const inventoryOpen = {};
@@ -693,7 +870,311 @@
                 buildSettingsForm();
             });
 
+        const MODEL_PROFILE_KEYS = ['model', 'code_model', 'vision_model', 'embedding'];
+        const MODEL_FIELD_PREFIXES = {
+            create: {
+                provider: 'profile-provider',
+                control: 'profile-model-control',
+                input: 'profile-setting',
+            },
+            agent: {
+                provider: 'agent-profile-provider',
+                control: 'agent-profile-model-control',
+                input: 'agent-profile-setting',
+            },
+        };
+
+        function modelFieldId(scope, part, key) {
+            return `${MODEL_FIELD_PREFIXES[scope][part]}-${key}`;
+        }
+
+        function modelFieldChangeHandler(scope) {
+            return scope === 'create' ? updateCreateAgentButtonState : onAgentSettingsChanged;
+        }
+
+        function getModelFieldPlaceholder(key) {
+            if (key === 'code_model' || key === 'vision_model') {
+                return '留空跟随对话模型；也可手动输入模型 ID';
+            }
+            if (key === 'embedding') {
+                return '留空自动选择；也可手动输入 embedding 模型 ID';
+            }
+            return '例如 deepseek-chat、gpt-5.4，或 JSON 模型对象';
+        }
+
+        function getModelFieldEmptyLabel(key) {
+            if (key === 'code_model' || key === 'vision_model') {
+                return '留空（跟随对话模型）';
+            }
+            if (key === 'embedding') {
+                return '留空（自动）';
+            }
+            return '请选择模型';
+        }
+
+        function buildProfileForm() {
+            const form = document.getElementById('profileForm');
+            if (!form) return;
+            form.innerHTML = '';
+            form.style.display = 'grid';
+            form.style.gridTemplateColumns = 'repeat(auto-fit, minmax(320px, 1fr))';
+            form.style.gap = '8px';
+            const fields = settingsSpec.profile?.fields || {};
+            Object.keys(fields).forEach(key => {
+                const cfg = fields[key];
+                if (MODEL_PROFILE_KEYS.includes(key)) {
+                    buildModelField(form, 'create', key, cfg, undefined);
+                    return;
+                }
+                const wrapper = document.createElement('div');
+                wrapper.className = 'setting-wrapper';
+                const label = document.createElement('label');
+                label.textContent = `${cfg.label || key}${cfg.required ? ' *' : ''}`;
+                label.title = `${cfg.label || key}（${key}）：${cfg.description || ''}`;
+                const input = createSettingInput(cfg);
+                input.title = cfg.description || '';
+                input.id = `profile-setting-${key}`;
+                input.addEventListener('input', updateCreateAgentButtonState);
+                input.addEventListener('change', updateCreateAgentButtonState);
+                wrapper.appendChild(label);
+                wrapper.appendChild(input);
+                form.appendChild(wrapper);
+            });
+            updateCreateAgentButtonState();
+        }
+
+        function resolveModelFieldValue(value) {
+            if (value === undefined || value === null || value === '') {
+                return { providerId: '', modelValue: '', manualValue: '' };
+            }
+            if (typeof value === 'string') {
+                if (value.startsWith('custom-') && value.includes('/')) {
+                    const providerId = value.split('/')[0];
+                    if (availableProviders.some(provider => provider.id === providerId)) {
+                        return {
+                            providerId,
+                            modelValue: value.slice(providerId.length + 1),
+                            manualValue: '',
+                        };
+                    }
+                }
+                return { providerId: '', modelValue: '', manualValue: value };
+            }
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                const keys = Object.keys(value).sort();
+                const isSimple = keys.length === 2
+                    && keys[0] === 'api'
+                    && keys[1] === 'model'
+                    && typeof value.api === 'string'
+                    && typeof value.model === 'string';
+                if (isSimple && availableProviders.some(provider => provider.id === value.api)) {
+                    return { providerId: value.api, modelValue: value.model, manualValue: '' };
+                }
+                return { providerId: '', modelValue: '', manualValue: JSON.stringify(value) };
+            }
+            return { providerId: '', modelValue: '', manualValue: String(value) };
+        }
+
+        function buildModelField(container, scope, key, cfg, value) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'setting-wrapper model-field';
+
+            const label = document.createElement('label');
+            label.textContent = `${cfg.label || key}${cfg.required ? ' *' : ''}`;
+            label.title = `${cfg.label || key}（${key}）：${cfg.description || ''}`;
+            wrapper.appendChild(label);
+
+            const group = document.createElement('div');
+            group.className = 'model-field-control';
+            const resolved = resolveModelFieldValue(value);
+
+            if (availableProviders.length > 0) {
+                const providerSelect = document.createElement('select');
+                providerSelect.id = modelFieldId(scope, 'provider', key);
+                providerSelect.title = '选择模型供应商';
+                const defaultOption = document.createElement('option');
+                defaultOption.value = '';
+                defaultOption.textContent = key === 'model'
+                    ? '手动输入'
+                    : (key === 'embedding' ? '自动（留空）' : '跟随对话模型（留空）');
+                providerSelect.appendChild(defaultOption);
+                for (const provider of availableProviders) {
+                    const option = document.createElement('option');
+                    option.value = provider.id;
+                    option.textContent = provider.name;
+                    providerSelect.appendChild(option);
+                }
+                if (resolved.providerId) {
+                    providerSelect.value = resolved.providerId;
+                }
+                providerSelect.addEventListener('change', () => {
+                    renderModelFieldControl(scope, key);
+                });
+                group.appendChild(providerSelect);
+            }
+
+            const control = document.createElement('div');
+            control.id = modelFieldId(scope, 'control', key);
+            control.className = 'profile-model-control';
+            group.appendChild(control);
+            wrapper.appendChild(group);
+            container.appendChild(wrapper);
+
+            renderModelFieldControl(scope, key, resolved, false);
+        }
+
+        function renderModelFieldControl(scope, key, resolved = undefined, notify = true) {
+            const control = document.getElementById(modelFieldId(scope, 'control', key));
+            if (!control) return;
+            const providerSelect = document.getElementById(modelFieldId(scope, 'provider', key));
+            const providerId = providerSelect?.value || '';
+            const previous = resolved
+                ? (resolved.modelValue || resolved.manualValue || '')
+                : (document.getElementById(modelFieldId(scope, 'input', key))?.value || '');
+            const provider = availableProviders.find(item => item.id === providerId);
+            control.innerHTML = '';
+
+            if (provider && Array.isArray(provider.models) && provider.models.length > 0) {
+                const select = document.createElement('select');
+                select.id = modelFieldId(scope, 'input', key);
+                const placeholder = document.createElement('option');
+                placeholder.value = '';
+                placeholder.textContent = getModelFieldEmptyLabel(key);
+                select.appendChild(placeholder);
+
+                const models = [...provider.models];
+                if (resolved?.modelValue && !models.includes(resolved.modelValue)) {
+                    models.push(resolved.modelValue);
+                }
+                for (const model of models) {
+                    const option = document.createElement('option');
+                    option.value = model;
+                    option.textContent = model;
+                    select.appendChild(option);
+                }
+                if (previous !== '' && models.includes(previous)) {
+                    select.value = previous;
+                }
+                select.addEventListener('change', modelFieldChangeHandler(scope));
+                control.appendChild(select);
+            } else {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.id = modelFieldId(scope, 'input', key);
+                input.value = previous;
+                input.placeholder = provider
+                    ? '尚未拉取模型，请手动输入模型 ID 或先到“模型供应商”拉取'
+                    : getModelFieldPlaceholder(key);
+                input.title = settingsSpec.profile?.fields?.[key]?.description || '';
+                input.addEventListener('input', modelFieldChangeHandler(scope));
+                input.addEventListener('change', modelFieldChangeHandler(scope));
+                control.appendChild(input);
+            }
+            if (notify) {
+                modelFieldChangeHandler(scope)();
+            }
+        }
+
+        function parseManualModelValue(raw, label) {
+            if (raw.startsWith('{') || raw.startsWith('[')) {
+                try {
+                    return JSON.parse(raw);
+                } catch {
+                    throw new Error(`${label}不是有效的 JSON`);
+                }
+            }
+            return raw;
+        }
+
+        function getModelFieldValue(scope, key, label) {
+            const providerSelect = document.getElementById(modelFieldId(scope, 'provider', key));
+            const raw = document.getElementById(modelFieldId(scope, 'input', key))?.value?.trim() || '';
+            const providerId = providerSelect?.value || '';
+            if (providerId) {
+                if (raw === '') return { present: false };
+                return { present: true, value: { api: providerId, model: raw } };
+            }
+            if (raw === '') return { present: false };
+            return { present: true, value: parseManualModelValue(raw, label) };
+        }
+
+        function collectModelFields(scope, baseProfile) {
+            const fields = settingsSpec.profile?.fields || {};
+            for (const key of MODEL_PROFILE_KEYS) {
+                const label = fields[key]?.label || key;
+                const result = getModelFieldValue(scope, key, label);
+                if (result.present) {
+                    baseProfile[key] = result.value;
+                } else {
+                    delete baseProfile[key];
+                }
+            }
+            return baseProfile;
+        }
+
+        function isValidModelSpec(value, required = false) {
+            if (value === undefined || value === null || value === '') return !required;
+            if (typeof value === 'string') return value.trim().length > 0;
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                return typeof value.model === 'string' && value.model.trim().length > 0;
+            }
+            return false;
+        }
+
+        function getModelApi(value) {
+            if (typeof value === 'string') {
+                return value.startsWith('custom-') && value.includes('/') ? value.split('/')[0] : '';
+            }
+            if (value && typeof value === 'object' && typeof value.api === 'string') {
+                return value.api;
+            }
+            return '';
+        }
+
+        function validateProfileModels(profile) {
+            if (!profile) return '机器人配置缺失';
+            if (!isValidModelSpec(profile.model, true)) return '请选择有效的对话模型';
+            const optionalFields = [
+                ['code_model', '代码模型'],
+                ['vision_model', '视觉模型'],
+                ['embedding', '嵌入模型'],
+            ];
+            for (const [key, label] of optionalFields) {
+                if (profile[key] === undefined) continue;
+                if (!isValidModelSpec(profile[key])) return `${label}格式无效`;
+                const api = getModelApi(profile[key]);
+                if (api && api.startsWith('custom-') && !availableProviders.some(provider => provider.id === api)) {
+                    return `所选${label}供应商不存在，请重新选择`;
+                }
+            }
+            const chatApi = getModelApi(profile.model);
+            if (chatApi && chatApi.startsWith('custom-') && !availableProviders.some(provider => provider.id === chatApi)) {
+                return '所选对话模型供应商不存在，请重新选择';
+            }
+            return null;
+        }
+
+        function deepEqual(a, b) {
+            if (a === b) return true;
+            if (typeof a !== typeof b) return false;
+            if (a === null || b === null) return false;
+            if (Array.isArray(a) || Array.isArray(b)) {
+                if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+                return a.every((item, index) => deepEqual(item, b[index]));
+            }
+            if (typeof a === 'object') {
+                const keysA = Object.keys(a);
+                const keysB = Object.keys(b);
+                if (keysA.length !== keysB.length) return false;
+                return keysA.every(key =>
+                    Object.prototype.hasOwnProperty.call(b, key) && deepEqual(a[key], b[key])
+                );
+            }
+            return false;
+        }
+
         function buildSettingsForm() {
+            buildProfileForm();
             const form = document.getElementById('settingsForm');
             form.innerHTML = '';
             // ensure grid for multi-column layout
@@ -701,7 +1182,7 @@
             form.style.gridTemplateColumns = 'repeat(auto-fit, minmax(320px, 1fr))';
             form.style.gap = '8px';
             Object.keys(settingsSpec).forEach(key => {
-                if (key === 'profile') return; // profile handled via upload
+                if (key === 'profile') return; // profile rendered by buildProfileForm
                 const cfg = settingsSpec[key];
                 const wrapper = document.createElement('div');
                 wrapper.className = 'setting-wrapper';
@@ -717,34 +1198,73 @@
             });
         }
 
-        document.getElementById('uploadProfileBtn').addEventListener('click', () => {
-            document.getElementById('profileFileInput').click();
-        });
+        function getProfileFieldValue(key) {
+            const input = document.getElementById(`profile-setting-${key}`);
+            return input ? input.value.trim() : '';
+        }
 
-        document.getElementById('profileFileInput').addEventListener('change', e => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = ev => {
+        function parseProfileValue(text, label) {
+            if (text.startsWith('{') || text.startsWith('[')) {
                 try {
-                    profileData = JSON.parse(ev.target.result);
-                    document.getElementById('submitCreateAgentBtn').disabled = false;
-                    document.getElementById('profileStatus').textContent = `配置文件：${profileData.name || '已上传'}`;
-                    document.getElementById('createError').textContent = '';
-                } catch (err) {
-                    document.getElementById('createError').textContent = '配置文件 JSON 无效：' + err.message;
-                    profileData = null;
-                    document.getElementById('submitCreateAgentBtn').disabled = true;
-                    document.getElementById('profileStatus').textContent = '配置文件：未上传';
+                    return JSON.parse(text);
+                } catch {
+                    throw new Error(`${label}不是有效的 JSON`);
                 }
-            };
-            reader.readAsText(file);
-            e.target.value = '';
-        });
+            }
+            return text;
+        }
+
+        function getProfileSettings() {
+            const fields = settingsSpec.profile?.fields || {};
+            const profile = {};
+            Object.keys(fields).forEach(key => {
+                if (MODEL_PROFILE_KEYS.includes(key)) return;
+                const raw = getProfileFieldValue(key);
+                if (raw === '') return;
+                if (fields[key].type === 'number') {
+                    const num = Number(raw);
+                    if (Number.isFinite(num)) profile[key] = num;
+                } else {
+                    profile[key] = parseProfileValue(raw, fields[key].label || key);
+                }
+            });
+            return collectModelFields('create', profile);
+        }
+
+        function updateCreateAgentButtonState() {
+            const btn = document.getElementById('submitCreateAgentBtn');
+            if (!btn) return;
+            const nameOk = getProfileFieldValue('name').length > 0;
+            const modelOk = getProfileFieldValue('model').length > 0;
+            btn.disabled = !(nameOk && modelOk);
+            const footer = document.getElementById('footerStatus');
+            if (footer) {
+                footer.textContent = (nameOk && modelOk)
+                    ? '创建后在机器人卡片上点击“连接”。'
+                    : '请填写机器人名称和对话模型；创建后在机器人卡片上点击“连接”。';
+            }
+        }
 
         document.getElementById('submitCreateAgentBtn').addEventListener('click', () => {
-            if (!profileData) return;
-            const settings = { profile: profileData };
+            const errorEl = document.getElementById('createError');
+            errorEl.textContent = '';
+            let profile;
+            try {
+                profile = getProfileSettings();
+            } catch (err) {
+                errorEl.textContent = err.message;
+                return;
+            }
+            if (!profile.name) {
+                errorEl.textContent = '请填写机器人名称';
+                return;
+            }
+            const modelError = validateProfileModels(profile);
+            if (modelError) {
+                errorEl.textContent = modelError;
+                return;
+            }
+            const settings = { profile };
             Object.keys(settingsSpec).forEach(key => {
                 if (key === 'profile') return;
                 const input = document.getElementById(`setting-${key}`);
@@ -761,13 +1281,10 @@
             });
             socket.emit('create-agent', settings, res => {
                 if (!res.success) {
-                    document.getElementById('createError').textContent = res.error || '未知错误';
+                    errorEl.textContent = res.error || '未知错误';
                 } else {
-                    // reset on success
-                    profileData = null;
-                    document.getElementById('submitCreateAgentBtn').disabled = true;
-                    document.getElementById('profileStatus').textContent = '配置文件：未上传';
-                    document.getElementById('createError').textContent = '';
+                    buildProfileForm();
+                    errorEl.textContent = '';
                     hideCreateAgentModal();
                 }
             });
@@ -775,7 +1292,8 @@
 
         // Modal open/close logic
         const modalBackdrop = document.getElementById('createAgentModal');
-        document.getElementById('openCreateAgentBtn').addEventListener('click', () => {
+        document.getElementById('openCreateAgentBtn').addEventListener('click', async () => {
+            await loadProvidersFromServer();
             buildSettingsForm();
             modalBackdrop.style.display = 'flex';
         });
@@ -783,6 +1301,236 @@
             modalBackdrop.style.display = 'none';
         }
         document.getElementById('closeCreateAgentBtn').addEventListener('click', hideCreateAgentModal);
+
+        // Model provider management logic
+        const providerModal = document.getElementById('providerModal');
+
+        async function loadProvidersFromServer() {
+            try {
+                const res = await fetch('/api/providers');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                availableProviders = Array.isArray(data.providers) ? data.providers : [];
+            } catch (err) {
+                console.error('加载模型供应商失败:', err);
+                availableProviders = [];
+            }
+            return availableProviders;
+        }
+
+        function makeProviderButton(text, className, onClick) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = className;
+            button.textContent = text;
+            button.addEventListener('click', onClick);
+            return button;
+        }
+
+        function renderProviderList() {
+            const listEl = document.getElementById('providerList');
+            listEl.innerHTML = '';
+            if (availableProviders.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'provider-empty';
+                empty.textContent = '还没有模型供应商，点击“新增供应商”添加。';
+                listEl.appendChild(empty);
+                return;
+            }
+
+            for (const provider of availableProviders) {
+                const card = document.createElement('div');
+                card.className = 'provider-card';
+
+                const head = document.createElement('div');
+                head.className = 'provider-card-head';
+                const nameEl = document.createElement('span');
+                nameEl.className = 'provider-name';
+                nameEl.textContent = provider.name;
+                const keyEl = document.createElement('span');
+                keyEl.className = 'provider-meta provider-key';
+                keyEl.textContent = provider.hasApiKey ? provider.apiKeyMasked : '未设置 API Key';
+                const countEl = document.createElement('span');
+                countEl.className = 'provider-meta';
+                countEl.textContent = `${provider.models.length} 个模型`;
+                head.appendChild(nameEl);
+                head.appendChild(keyEl);
+                head.appendChild(countEl);
+                card.appendChild(head);
+
+                const urlEl = document.createElement('div');
+                urlEl.className = 'provider-meta';
+                urlEl.textContent = provider.url;
+                card.appendChild(urlEl);
+
+                const actions = document.createElement('div');
+                actions.className = 'provider-actions';
+                const editBtn = makeProviderButton('编辑', 'start-btn', () => openProviderForm(provider));
+                const fetchBtn = makeProviderButton('拉取模型', 'start-btn', () => fetchModelsForProvider(provider, fetchBtn));
+                const deleteBtn = makeProviderButton('删除', 'stop-btn', () => deleteProvider(provider));
+                actions.appendChild(editBtn);
+                actions.appendChild(fetchBtn);
+                actions.appendChild(deleteBtn);
+                card.appendChild(actions);
+
+                if (provider.models.length > 0) {
+                    const modelsEl = document.createElement('div');
+                    modelsEl.className = 'provider-models';
+                    for (const model of provider.models) {
+                        const chip = document.createElement('span');
+                        chip.className = 'model-chip';
+                        chip.textContent = model;
+                        modelsEl.appendChild(chip);
+                    }
+                    card.appendChild(modelsEl);
+                }
+
+                listEl.appendChild(card);
+            }
+        }
+
+        function setProviderStatus(message, isError = false) {
+            const statusEl = document.getElementById('providerStatus');
+            statusEl.textContent = message;
+            statusEl.style.color = isError ? '#f44336' : '#8bc34a';
+        }
+
+        function openProviderForm(provider = null) {
+            providerFormMode = provider ? provider.id : 'new';
+            document.getElementById('provider-name').value = provider?.name || '';
+            document.getElementById('provider-url').value = provider?.url || '';
+            const keyInput = document.getElementById('provider-apiKey');
+            keyInput.value = '';
+            keyInput.placeholder = provider ? '留空表示保持不变' : '本地服务可留空';
+            document.getElementById('providerFormError').textContent = '';
+            document.getElementById('providerForm').style.display = 'grid';
+            document.getElementById('provider-name').focus();
+        }
+
+        function closeProviderForm() {
+            providerFormMode = null;
+            document.getElementById('providerForm').style.display = 'none';
+            document.getElementById('providerFormError').textContent = '';
+        }
+
+        async function refreshProvidersAndList() {
+            await loadProvidersFromServer();
+            renderProviderList();
+        }
+
+        async function fetchModelsForProvider(provider, button) {
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = '拉取中...';
+            setProviderStatus(`正在拉取 ${provider.name} 的模型...`);
+            try {
+                const res = await fetch(`/api/providers/${encodeURIComponent(provider.id)}/fetch-models`, { method: 'POST' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                await refreshProvidersAndList();
+                setProviderStatus(`${provider.name}：已拉取 ${data.provider.models.length} 个模型`);
+            } catch (err) {
+                setProviderStatus(`${provider.name}：拉取失败 - ${err.message}`, true);
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+
+        async function deleteProvider(provider) {
+            if (!confirm(`确定删除模型供应商“${provider.name}”吗？`)) return;
+            try {
+                const res = await fetch(`/api/providers/${encodeURIComponent(provider.id)}`, { method: 'DELETE' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                await refreshProvidersAndList();
+                setProviderStatus(`已删除供应商 ${provider.name}`);
+            } catch (err) {
+                setProviderStatus(`删除失败 - ${err.message}`, true);
+            }
+        }
+
+        document.getElementById('openProviderManagerBtn').addEventListener('click', async () => {
+            document.getElementById('providerStatus').textContent = '';
+            closeProviderForm();
+            await loadProvidersFromServer();
+            renderProviderList();
+            providerModal.style.display = 'flex';
+        });
+
+        document.getElementById('closeProviderBtn').addEventListener('click', () => {
+            providerModal.style.display = 'none';
+            closeProviderForm();
+        });
+
+        document.getElementById('addProviderBtn').addEventListener('click', () => openProviderForm(null));
+        document.getElementById('cancelProviderBtn').addEventListener('click', closeProviderForm);
+
+        document.getElementById('saveProviderBtn').addEventListener('click', async () => {
+            const errorEl = document.getElementById('providerFormError');
+            errorEl.textContent = '';
+            const name = document.getElementById('provider-name').value.trim();
+            const url = document.getElementById('provider-url').value.trim();
+            const apiKey = document.getElementById('provider-apiKey').value.trim();
+            if (!name) {
+                errorEl.textContent = '请填写供应商名称';
+                return;
+            }
+            if (!url) {
+                errorEl.textContent = '请填写 API URL';
+                return;
+            }
+
+            const isNew = providerFormMode === 'new';
+            const payload = { name, url };
+            if (isNew || apiKey !== '') {
+                payload.apiKey = apiKey;
+            }
+
+            try {
+                const endpoint = isNew ? '/api/providers' : `/api/providers/${encodeURIComponent(providerFormMode)}`;
+                const res = await fetch(endpoint, {
+                    method: isNew ? 'POST' : 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                closeProviderForm();
+                await refreshProvidersAndList();
+                setProviderStatus(isNew ? `已新增供应商 ${name}` : `已保存供应商 ${name}`);
+            } catch (err) {
+                errorEl.textContent = err.message;
+            }
+        });
+
+        document.getElementById('fetchAllProvidersBtn').addEventListener('click', async () => {
+            if (availableProviders.length === 0) {
+                setProviderStatus('还没有模型供应商', true);
+                return;
+            }
+            const button = document.getElementById('fetchAllProvidersBtn');
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = '拉取中...';
+            setProviderStatus('正在拉取全部供应商的模型...');
+            try {
+                const res = await fetch('/api/providers/fetch-all-models', { method: 'POST' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                const failed = (data.results || []).filter(result => !result.success);
+                if (failed.length > 0) {
+                    setProviderStatus(`完成：${data.results.length - failed.length} 个成功，${failed.length} 个失败`, true);
+                } else {
+                    setProviderStatus(`已拉取全部 ${data.results.length} 个供应商的模型`);
+                }
+                await refreshProvidersAndList();
+            } catch (err) {
+                setProviderStatus(`拉取失败 - ${err.message}`, true);
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        });
 
         socket.on('bot-output', (agentName, message) => {
             agentLastMessage[agentName] = message;
@@ -892,6 +1640,7 @@
 
         // Agent settings modal logic
         const agentSettingsModal = document.getElementById('agentSettingsModal');
+        const agentModelForm = document.getElementById('agentModelForm');
         const agentSettingsForm = document.getElementById('agentSettingsForm');
         const applyBtn = document.getElementById('applyAgentSettingsBtn');
         const discardBtn = document.getElementById('discardAgentSettingsBtn');
@@ -901,12 +1650,24 @@
         let originalAgentSettings = null;
 
         function buildAgentSettingsForm(settings) {
+            const profile = settings.profile || {};
+            const profileFields = settingsSpec.profile?.fields || {};
+
+            agentModelForm.innerHTML = '';
+            agentModelForm.style.display = 'grid';
+            agentModelForm.style.gridTemplateColumns = 'repeat(auto-fit, minmax(320px, 1fr))';
+            agentModelForm.style.gap = '8px';
+            for (const key of MODEL_PROFILE_KEYS) {
+                if (!profileFields[key]) continue;
+                buildModelField(agentModelForm, 'agent', key, profileFields[key], profile[key]);
+            }
+
             agentSettingsForm.innerHTML = '';
             agentSettingsForm.style.display = 'grid';
             agentSettingsForm.style.gridTemplateColumns = 'repeat(auto-fit, minmax(320px, 1fr))';
             agentSettingsForm.style.gap = '8px';
             Object.keys(settingsSpec).forEach(key => {
-                if (key === 'profile') return; // profile not edited here
+                if (key === 'profile') return; // profile models are edited above
                 const cfg = settingsSpec[key];
                 const wrapper = document.createElement('div');
                 wrapper.className = 'setting-wrapper';
@@ -925,19 +1686,23 @@
             onAgentSettingsChanged();
         }
 
-        function openAgentSettings(name) {
+        async function openAgentSettings(name) {
             currentAgentName = name;
             agentSettingsTitle.textContent = `${name} 的设置`;
-            fetchAgentSettings(name).then(settings => {
-                originalAgentSettings = JSON.parse(JSON.stringify(settings || {}));
-                buildAgentSettingsForm(settings || {});
-                agentSettingsModal.style.display = 'flex';
-            });
+            document.getElementById('agentSettingsError').textContent = '';
+            const [settings] = await Promise.all([
+                fetchAgentSettings(name),
+                loadProvidersFromServer(),
+            ]);
+            originalAgentSettings = JSON.parse(JSON.stringify(settings || {}));
+            buildAgentSettingsForm(settings || {});
+            agentSettingsModal.style.display = 'flex';
         }
         window.openAgentSettings = openAgentSettings;
 
         function getEditedAgentSettings() {
-            const newSettings = { profile: (originalAgentSettings && originalAgentSettings.profile) || {} };
+            const baseProfile = JSON.parse(JSON.stringify(originalAgentSettings?.profile || {}));
+            const newSettings = { profile: collectModelFields('agent', baseProfile) };
             Object.keys(settingsSpec).forEach(key => {
                 if (key === 'profile') return;
                 const cfg = settingsSpec[key];
@@ -959,23 +1724,38 @@
             if (!a || !b) return false;
             const keys = Object.keys(settingsSpec).filter(k => k !== 'profile');
             for (const k of keys) {
-                const va = a[k];
-                const vb = b[k];
-                if (typeof va === 'object' || typeof vb === 'object') {
-                    if (JSON.stringify(va) !== JSON.stringify(vb)) return false;
-                } else if (va !== vb) return false;
+                if (!deepEqual(a[k], b[k])) return false;
+            }
+            const profileA = a.profile || {};
+            const profileB = b.profile || {};
+            for (const key of MODEL_PROFILE_KEYS) {
+                if (!deepEqual(profileA[key], profileB[key])) return false;
             }
             return true;
         }
 
         function onAgentSettingsChanged() {
             if (!originalAgentSettings) { applyBtn.disabled = true; return; }
-            const edited = getEditedAgentSettings();
-            applyBtn.disabled = shallowEqual(edited, originalAgentSettings);
+            const errorEl = document.getElementById('agentSettingsError');
+            try {
+                const edited = getEditedAgentSettings();
+                const modelError = validateProfileModels(edited.profile);
+                if (modelError) {
+                    errorEl.textContent = modelError;
+                    applyBtn.disabled = true;
+                    return;
+                }
+                errorEl.textContent = '';
+                applyBtn.disabled = shallowEqual(edited, originalAgentSettings);
+            } catch (err) {
+                errorEl.textContent = err.message;
+                applyBtn.disabled = true;
+            }
         }
 
         function closeAgentSettings() {
             agentSettingsModal.style.display = 'none';
+            document.getElementById('agentSettingsError').textContent = '';
             currentAgentName = null;
             originalAgentSettings = null;
         }
@@ -995,17 +1775,37 @@
 
         discardBtn.addEventListener('click', () => {
             if (!currentAgentName || !originalAgentSettings) return;
+            document.getElementById('agentSettingsError').textContent = '';
             buildAgentSettingsForm(originalAgentSettings);
         });
 
         applyBtn.addEventListener('click', () => {
             if (!currentAgentName) return;
-            const edited = getEditedAgentSettings();
-            socket.emit('set-agent-settings', currentAgentName, edited);
-            // Update local settings immediately
-            agentSettings[currentAgentName] = { ...edited, fetched: true };
-            updateAgentViewer(currentAgentName);
-            closeAgentSettings();
+            const errorEl = document.getElementById('agentSettingsError');
+            const agentName = currentAgentName;
+            let edited;
+            try {
+                edited = getEditedAgentSettings();
+            } catch (err) {
+                errorEl.textContent = err.message;
+                return;
+            }
+            const modelError = validateProfileModels(edited.profile);
+            if (modelError) {
+                errorEl.textContent = modelError;
+                return;
+            }
+            applyBtn.disabled = true;
+            socket.emit('set-agent-settings', agentName, edited, res => {
+                if (!res?.success) {
+                    errorEl.textContent = res?.error || '保存失败';
+                    applyBtn.disabled = false;
+                    return;
+                }
+                agentSettings[agentName] = { ...edited, fetched: true };
+                updateAgentViewer(agentName);
+                closeAgentSettings();
+            });
         });
 
         closeAgentSettingsBtn.addEventListener('click', closeAgentSettings);

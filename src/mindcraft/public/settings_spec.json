@@ -1,9 +1,44 @@
 {
     "profile": {
         "type": "object",
-        "label": "配置文件",
+        "label": "机器人配置",
         "required": true,
-        "description": "用于启动机器人的配置文件对象，包含名称、提示词和示例"
+        "description": "用于创建机器人的配置对象，包含机器人名称、模型等",
+        "fields": {
+            "name": {
+                "type": "string",
+                "label": "机器人名称",
+                "required": true,
+                "description": "必填。微软登录时必须与 Minecraft 账号名称完全一致"
+            },
+            "model": {
+                "type": "string",
+                "label": "对话模型",
+                "required": true,
+                "description": "选择供应商后从模型列表中选择；手动输入时可填 deepseek-chat、gpt-5.4、openrouter/google/gemini-2.5-pro，或 JSON 模型对象"
+            },
+            "code_model": {
+                "type": "string",
+                "label": "代码模型",
+                "description": "可选。用于生成 !newAction 代码；留空时使用对话模型"
+            },
+            "vision_model": {
+                "type": "string",
+                "label": "视觉模型",
+                "description": "可选。用于分析游戏截图；留空时使用对话模型"
+            },
+            "embedding": {
+                "type": "string",
+                "label": "嵌入模型",
+                "description": "从供应商模型列表中选择 embedding 模型；留空时自动尝试，失败则使用关键词匹配"
+            },
+            "cooldown": {
+                "type": "number",
+                "label": "冷却时间（毫秒）",
+                "description": "可选。机器人两次回复之间的最小间隔",
+                "default": 0
+            }
+        }
     },
     "minecraft_version": {
         "type": "string",

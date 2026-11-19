@@ -5,6 +5,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as mindcraft from './mindcraft.js';
 import { readFileSync } from 'fs';
+import {
+    loadProviders,
+    saveProviders,
+    getProvider,
+    sanitizeProvider,
+    generateProviderId,
+    validateProviderInput,
+} from '../utils/providers.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Mindserver is:
@@ -18,6 +26,128 @@ const agent_connections = {};
 const agent_listeners = [];
 
 const settings_spec = JSON.parse(readFileSync(path.join(__dirname, 'public/settings_spec.json'), 'utf8'));
+
+async function fetchModelsFromProvider(provider) {
+    const base = String(provider.url || '').replace(/\/+$/, '');
+    if (!base) {
+        throw new Error('供应商 URL 为空');
+    }
+
+    const endpoints = [];
+    if (/\/models$/.test(base)) {
+        endpoints.push(base);
+    } else {
+        endpoints.push(`${base}/models`);
+        if (!/\/v1$/.test(base)) {
+            endpoints.push(`${base}/v1/models`);
+        }
+    }
+
+    let lastError = null;
+    for (const endpoint of endpoints) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15000);
+        try {
+            const headers = { Accept: 'application/json' };
+            if (provider.apiKey) {
+                headers.Authorization = `Bearer ${provider.apiKey}`;
+            }
+            const response = await fetch(endpoint, { headers, signal: controller.signal });
+            const text = await response.text();
+            if (!response.ok) {
+                let detail = text.slice(0, 300).trim();
+                try {
+                    const parsed = JSON.parse(text);
+                    detail = parsed?.error?.message || parsed?.message || detail;
+                } catch { /* ignore */ }
+                lastError = new Error(`请求模型列表失败（HTTP ${response.status}）${detail ? `：${detail}` : ''}`);
+                continue;
+            }
+
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch {
+                lastError = new Error('模型列表响应不是 JSON');
+                continue;
+            }
+
+            const rawList = Array.isArray(data)
+                ? data
+                : (Array.isArray(data?.data) ? data.data : (Array.isArray(data?.models) ? data.models : []));
+            const models = [...new Set(rawList
+                .map(item => (typeof item === 'string' ? item : item?.id || item?.name || item?.model || null))
+                .filter(Boolean)
+                .map(name => String(name).trim())
+                .filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+            if (!models.length) {
+                lastError = new Error('模型列表为空');
+                continue;
+            }
+            return models;
+        } catch (err) {
+            lastError = err.name === 'AbortError'
+                ? new Error('请求模型列表超时（15 秒）')
+                : err;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+    throw lastError || new Error('无法获取模型列表');
+}
+
+function getModelProviderId(value) {
+    if (typeof value === 'string') {
+        if (value.startsWith('custom-') && value.includes('/')) {
+            return value.split('/')[0];
+        }
+        return null;
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value) && typeof value.api === 'string') {
+        return value.api;
+    }
+    return null;
+}
+
+function validateModelSpec(value, { required = false } = {}) {
+    if (value === undefined || value === null || value === '') {
+        return { valid: !required, providerId: null };
+    }
+    if (typeof value === 'string') {
+        return { valid: value.trim().length > 0, providerId: getModelProviderId(value) };
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const valid = typeof value.model === 'string' && value.model.trim().length > 0;
+        return { valid, providerId: getModelProviderId(value) };
+    }
+    return { valid: false, providerId: null };
+}
+
+function validateProfileModels(profile) {
+    const chatModel = validateModelSpec(profile?.model, { required: true });
+    if (!chatModel.valid) {
+        return '机器人配置中必须包含有效的模型';
+    }
+    const optionalModelFields = [
+        ['code_model', '代码模型'],
+        ['vision_model', '视觉模型'],
+        ['embedding', '嵌入模型'],
+    ];
+    for (const [field, label] of optionalModelFields) {
+        const result = validateModelSpec(profile?.[field]);
+        if (!result.valid) {
+            return `${label}格式无效`;
+        }
+        if (result.providerId && result.providerId.startsWith('custom-') && !getProvider(result.providerId)) {
+            return `所选${label}供应商不存在，请刷新后重试`;
+        }
+    }
+    if (chatModel.providerId && chatModel.providerId.startsWith('custom-') && !getProvider(chatModel.providerId)) {
+        return '所选对话模型供应商不存在，请刷新后重试';
+    }
+    return null;
+}
 
 class AgentConnection {
     constructor(settings, viewer_port) {
@@ -51,12 +181,123 @@ export function getAgentSettings(agentName) {
 // Initialize the server
 export function createMindServer(host_public = false, port = 8080) {
     const app = express();
+    app.use(express.json({ limit: '1mb' }));
     server = http.createServer(app);
     io = new Server(server);
 
     // Serve static files
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     app.use(express.static(path.join(__dirname, 'public')));
+
+    // Model provider management API
+    app.get('/api/providers', (req, res) => {
+        const providers = loadProviders();
+        res.json({ providers: providers.map(sanitizeProvider) });
+    });
+
+    app.post('/api/providers', (req, res) => {
+        try {
+            const providers = loadProviders();
+            const input = validateProviderInput(req.body || {}, null, providers);
+            const provider = {
+                id: generateProviderId(input.name, providers.map(item => item.id)),
+                name: input.name,
+                url: input.url,
+                apiKey: input.apiKey,
+                models: [],
+                modelsFetchedAt: null,
+            };
+            providers.push(provider);
+            saveProviders(providers);
+            res.json({ provider: sanitizeProvider(provider) });
+        } catch (err) {
+            res.status(400).json({ error: err.message || '新增供应商失败' });
+        }
+    });
+
+    app.put('/api/providers/:id', (req, res) => {
+        try {
+            const providers = loadProviders();
+            const index = providers.findIndex(provider => provider.id === req.params.id);
+            if (index === -1) {
+                res.status(404).json({ error: '供应商不存在' });
+                return;
+            }
+            const existing = providers[index];
+            const input = validateProviderInput(req.body || {}, existing, providers);
+            const connectionChanged = input.url !== existing.url || input.apiKey !== existing.apiKey;
+            const updated = {
+                ...existing,
+                name: input.name,
+                url: input.url,
+                apiKey: input.apiKey,
+            };
+            if (connectionChanged) {
+                updated.models = [];
+                updated.modelsFetchedAt = null;
+            }
+            providers[index] = updated;
+            saveProviders(providers);
+            res.json({ provider: sanitizeProvider(updated) });
+        } catch (err) {
+            res.status(400).json({ error: err.message || '保存供应商失败' });
+        }
+    });
+
+    app.delete('/api/providers/:id', (req, res) => {
+        try {
+            const providers = loadProviders();
+            const index = providers.findIndex(provider => provider.id === req.params.id);
+            if (index === -1) {
+                res.status(404).json({ error: '供应商不存在' });
+                return;
+            }
+            const [removed] = providers.splice(index, 1);
+            saveProviders(providers);
+            res.json({ success: true, provider: sanitizeProvider(removed) });
+        } catch (err) {
+            res.status(500).json({ error: err.message || '删除供应商失败' });
+        }
+    });
+
+    app.post('/api/providers/fetch-all-models', async (req, res) => {
+        try {
+            const providers = loadProviders();
+            const results = [];
+            for (const provider of providers) {
+                try {
+                    const models = await fetchModelsFromProvider(provider);
+                    provider.models = models;
+                    provider.modelsFetchedAt = new Date().toISOString();
+                    results.push({ id: provider.id, name: provider.name, success: true, count: models.length });
+                } catch (err) {
+                    results.push({ id: provider.id, name: provider.name, success: false, error: err.message || '拉取模型失败' });
+                }
+            }
+            saveProviders(providers);
+            res.json({ results, providers: providers.map(sanitizeProvider) });
+        } catch (err) {
+            res.status(500).json({ error: err.message || '拉取模型失败' });
+        }
+    });
+
+    app.post('/api/providers/:id/fetch-models', async (req, res) => {
+        try {
+            const providers = loadProviders();
+            const provider = providers.find(item => item.id === req.params.id);
+            if (!provider) {
+                res.status(404).json({ error: '供应商不存在' });
+                return;
+            }
+            const models = await fetchModelsFromProvider(provider);
+            provider.models = models;
+            provider.modelsFetchedAt = new Date().toISOString();
+            saveProviders(providers);
+            res.json({ provider: sanitizeProvider(provider) });
+        } catch (err) {
+            res.status(502).json({ error: err.message || '拉取模型失败' });
+        }
+    });
 
     // Texture proxy: resolve item/block textures using minecraft-assets with version fallback
     app.get('/assets/item/:agent/:name.png', async (req, res) => {
@@ -142,24 +383,29 @@ export function createMindServer(host_public = false, port = 8080) {
                     delete settings[key];
                 }
             }
-            if (settings.profile?.name) {
-                if (settings.profile.name in agent_connections) {
-                    callback({ success: false, error: '机器人已存在' });
-                    return;
-                }
-                let returned = await mindcraft.createAgent(settings);
-                callback({ success: returned.success, error: returned.error });
-                let name = settings.profile.name;
-                if (!returned.success && agent_connections[name]) {
-                    mindcraft.destroyAgent(name);
-                    delete agent_connections[name];
-                }
-                agentsStatusUpdate();
+            if (!settings.profile?.name) {
+                console.error('机器人配置中必须包含名称');
+                callback({ success: false, error: '机器人配置中必须包含名称' });
+                return;
             }
-            else {
-                console.error('配置文件中必须包含机器人名称');
-                callback({ success: false, error: '配置文件中必须包含机器人名称' });
+            const modelError = validateProfileModels(settings.profile);
+            if (modelError) {
+                console.error(modelError);
+                callback({ success: false, error: modelError });
+                return;
             }
+            if (settings.profile.name in agent_connections) {
+                callback({ success: false, error: '机器人已存在' });
+                return;
+            }
+            let returned = await mindcraft.createAgent(settings);
+            callback({ success: returned.success, error: returned.error });
+            let name = settings.profile.name;
+            if (!returned.success && agent_connections[name]) {
+                mindcraft.destroyAgent(name);
+                delete agent_connections[name];
+            }
+            agentsStatusUpdate();
         });
 
         socket.on('get-settings', (agentName, callback) => {
@@ -214,12 +460,21 @@ export function createMindServer(host_public = false, port = 8080) {
             agent_connections[agentName].socket.emit('chat-message', curAgentName, json);
         });
 
-        socket.on('set-agent-settings', (agentName, settings) => {
+        socket.on('set-agent-settings', (agentName, settings, callback) => {
             const agent = agent_connections[agentName];
-            if (agent) {
-                agent.setSettings(settings);
-                if (agent.socket) agent.socket.emit('restart-agent');
+            if (!agent) {
+                callback?.({ success: false, error: `未找到机器人“${agentName}”` });
+                return;
             }
+            const modelError = validateProfileModels(settings.profile);
+            if (modelError) {
+                console.error(`Rejected settings for ${agentName}: ${modelError}`);
+                callback?.({ success: false, error: modelError });
+                return;
+            }
+            agent.setSettings(settings);
+            if (agent.socket) agent.socket.emit('restart-agent');
+            callback?.({ success: true });
         });
 
         socket.on('restart-agent', (agentName) => {
