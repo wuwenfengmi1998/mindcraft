@@ -139,3 +139,14 @@ export function sendBotChatToServer(agentName, json) {
 export function sendOutputToServer(agentName, message) {
     serverProxy.getSocket().emit('bot-output', agentName, message);
 }
+
+// for sending structured runtime logs to the web console
+export function sendAgentLog(agentName, level, message, extra = {}) {
+    const socket = serverProxy.getSocket();
+    if (!socket || !socket.connected) return;
+    try {
+        socket.emit('agent-log', { agentName, level, message, ...extra });
+    } catch {
+        // Logging must never break the agent.
+    }
+}

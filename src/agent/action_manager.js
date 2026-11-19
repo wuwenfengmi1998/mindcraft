@@ -1,3 +1,5 @@
+import { sendAgentLog } from './mindserver_proxy.js';
+
 export class ActionManager {
     constructor(agent) {
         this.agent = agent;
@@ -60,6 +62,8 @@ export class ActionManager {
 
     async _executeAction(actionLabel, actionFn, timeout = 10) {
         let TIMEOUT;
+        const actionStartedAt = Date.now();
+        let actionStarted = false;
         try {
             if (this.last_action_time > 0) {
                 let time_diff = Date.now() - this.last_action_time;
@@ -95,6 +99,11 @@ export class ActionManager {
             this.executing = true;
             this.currentActionLabel = actionLabel;
             this.currentActionFn = actionFn;
+            actionStarted = true;
+            this._logAction('info', `动作开始：${actionLabel}`, {
+                event: 'action-start',
+                label: actionLabel,
+            });
 
             // timeout in minutes
             if (timeout > 0) {
@@ -116,6 +125,15 @@ export class ActionManager {
             let timedout = this.timedout;
             this.agent.clearBotLogs();
 
+            this._logAction(interrupted || timedout ? 'warn' : 'info',
+                `${timedout ? '动作超时' : interrupted ? '动作被中断' : '动作完成'}：${actionLabel}`,
+                {
+                    event: 'action-end',
+                    label: actionLabel,
+                    ok: !interrupted && !timedout,
+                    durationMs: Date.now() - actionStartedAt,
+                });
+
             // if not interrupted and not generating, emit idle event
             if (!interrupted) {
                 this.agent.bot.emit('idle');
@@ -134,6 +152,14 @@ export class ActionManager {
             console.error(err.stack);
             await this.stop();
             err = err.toString();
+            if (actionStarted) {
+                this._logAction('error', `动作失败：${actionLabel}：${err}`, {
+                    event: 'action-end',
+                    label: actionLabel,
+                    ok: false,
+                    durationMs: Date.now() - actionStartedAt,
+                });
+            }
 
             let message = this.getBotOutputSummary() +
                 '!!Code threw exception!!\n' +
@@ -146,6 +172,14 @@ export class ActionManager {
                 this.agent.bot.emit('idle');
             }
             return { success: false, message, interrupted, timedout: false };
+        }
+    }
+
+    _logAction(level, message, extra = {}) {
+        try {
+            sendAgentLog(this.agent?.name, level, message, extra);
+        } catch {
+            // Logging must never break action execution.
         }
     }
 

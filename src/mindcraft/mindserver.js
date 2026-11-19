@@ -38,6 +38,58 @@ let server;
 const agent_connections = {};
 const agent_listeners = [];
 
+const agentLogs = {};
+let agentLogSeq = 0;
+const MAX_AGENT_LOG_ENTRIES = 500;
+const MAX_AGENT_LOG_MESSAGE_LENGTH = 8000;
+const ALLOWED_LOG_LEVELS = new Set(['info', 'warn', 'error', 'chat', 'admin']);
+const ALLOWED_LOG_EVENTS = new Set(['action-start', 'action-end']);
+// eslint-disable-next-line no-control-regex
+const ANSI_ESCAPE_PATTERN = new RegExp('\\x1b\\[[0-9;]*m', 'g');
+
+function normalizeLogLevel(level) {
+    return ALLOWED_LOG_LEVELS.has(level) ? level : 'info';
+}
+
+function addAgentLog(agentName, payload = {}) {
+    if (!agentName || !agent_connections[agentName]) return null;
+    const message = String(payload.message ?? '')
+        .replace(ANSI_ESCAPE_PATTERN, '')
+        .slice(0, MAX_AGENT_LOG_MESSAGE_LENGTH);
+    if (!message) return null;
+
+    const logs = agentLogs[agentName] || (agentLogs[agentName] = []);
+    const last = logs[logs.length - 1];
+    const now = Date.now();
+    if (last && last.message === message && last.level === normalizeLogLevel(payload.level) && now - last.ts < 1000) {
+        return null;
+    }
+
+    const entry = {
+        id: ++agentLogSeq,
+        ts: now,
+        level: normalizeLogLevel(payload.level),
+        message,
+    };
+    if (ALLOWED_LOG_EVENTS.has(payload.event)) {
+        entry.event = payload.event;
+        if (payload.label) entry.label = String(payload.label).slice(0, 200);
+        if (typeof payload.ok === 'boolean') entry.ok = payload.ok;
+        if (Number.isFinite(Number(payload.durationMs))) {
+            entry.durationMs = Math.max(0, Math.round(Number(payload.durationMs)));
+        }
+    }
+
+    logs.push(entry);
+    if (logs.length > MAX_AGENT_LOG_ENTRIES) {
+        logs.splice(0, logs.length - MAX_AGENT_LOG_ENTRIES);
+    }
+    if (io) {
+        io.emit('agent-log', agentName, entry);
+    }
+    return entry;
+}
+
 const settings_spec = JSON.parse(readFileSync(path.join(__dirname, 'public/settings_spec.json'), 'utf8'));
 
 async function fetchModelsFromProvider(provider) {
@@ -206,6 +258,7 @@ export function logoutAgent(agentName) {
         agent_connections[agentName].in_game = false;
         agent_connections[agentName].starting = false;
         agent_connections[agentName].viewer = null;
+        addAgentLog(agentName, { level: 'warn', message: '机器人进程已退出' });
         agentsStatusUpdate();
     }
 }
@@ -581,14 +634,18 @@ export function createMindServer(host_public = false, port = 8080) {
                 return;
             }
             let returned = await mindcraft.createAgent(settings);
+            let name = settings.profile.name;
             if (returned.success) {
                 upsertBotSettings(settings);
+                addAgentLog(name, { level: 'info', message: '机器人已创建' });
+            } else if (agent_connections[name]) {
+                addAgentLog(name, { level: 'error', message: `创建失败：${returned.error || '未知错误'}` });
             }
             callback({ success: returned.success, error: returned.error });
-            let name = settings.profile.name;
             if (!returned.success && agent_connections[name]) {
                 mindcraft.destroyAgent(name);
                 delete agent_connections[name];
+                delete agentLogs[name];
             }
             agentsStatusUpdate();
         });
@@ -609,6 +666,7 @@ export function createMindServer(host_public = false, port = 8080) {
                 agent_connections[agentName].socket = socket;
                 agent_connections[agentName].starting = false;
                 agent_connections[agentName].viewer = null;
+                addAgentLog(agentName, { level: 'info', message: '机器人进程已连接 MindServer' });
                 agentsStatusUpdate();
             }
         });
@@ -625,6 +683,7 @@ export function createMindServer(host_public = false, port = 8080) {
                 state = 'error';
                 error = error || '视角服务 socket 路径无效';
             }
+            const previousViewerState = connection.viewer?.state;
             connection.viewer = {
                 state,
                 socketPath: state === 'ready' ? socketPath : null,
@@ -633,6 +692,9 @@ export function createMindServer(host_public = false, port = 8080) {
                 viewerVersion: status?.viewerVersion ? String(status.viewerVersion) : null,
                 updatedAt: new Date().toISOString(),
             };
+            if (state === 'error' && previousViewerState !== 'error') {
+                addAgentLog(agentName, { level: 'error', message: `视角服务错误：${error || '未知错误'}` });
+            }
             agentsStatusUpdate();
         });
 
@@ -646,6 +708,7 @@ export function createMindServer(host_public = false, port = 8080) {
                 agent_connections[agentName].starting = false;
                 agent_connections[agentName].viewer = null;
                 curAgentName = agentName;
+                addAgentLog(agentName, { level: 'info', message: '已登录 Minecraft' });
                 agentsStatusUpdate();
             }
             else {
@@ -660,6 +723,7 @@ export function createMindServer(host_public = false, port = 8080) {
                 agent_connections[curAgentName].starting = false;
                 agent_connections[curAgentName].viewer = null;
                 agent_connections[curAgentName].socket = null;
+                addAgentLog(curAgentName, { level: 'warn', message: '与 MindServer 断开连接' });
                 agentsStatusUpdate();
             }
             if (agent_listeners.includes(socket)) {
@@ -714,6 +778,7 @@ export function createMindServer(host_public = false, port = 8080) {
                     callback?.({ success: false, error: '新账号对应的机器人名称已存在' });
                     return;
                 }
+                const previousLogs = agentLogs[agentName] || [];
                 const wasRunning = !!agent.socket || agent.in_game;
                 mindcraft.destroyAgent(agentName);
                 delete agent_connections[agentName];
@@ -729,6 +794,10 @@ export function createMindServer(host_public = false, port = 8080) {
                     agentsStatusUpdate();
                     return;
                 }
+                if (previousLogs.length > 0) {
+                    agentLogs[newName] = previousLogs;
+                }
+                delete agentLogs[agentName];
 
                 removeBotSettings(agentName);
                 upsertBotSettings(settings);
@@ -764,6 +833,7 @@ export function createMindServer(host_public = false, port = 8080) {
             agent.setSettings(settings);
             upsertBotSettings(settings);
             agent.viewer = null;
+            addAgentLog(agentName, { level: 'info', message: agent.socket ? '设置已更新，正在重启机器人' : '设置已更新' });
             if (agent.socket) agent.socket.emit('restart-agent');
             callback?.({ success: true });
         });
@@ -771,12 +841,14 @@ export function createMindServer(host_public = false, port = 8080) {
         socket.on('restart-agent', (agentName) => {
             console.log(`Restarting agent: ${agentName}`);
             const agent = agent_connections[agentName];
+            addAgentLog(agentName, { level: 'warn', message: '正在重启机器人' });
             if (agent?.socket) agent.socket.emit('restart-agent');
         });
 
         socket.on('stop-agent', (agentName) => {
             const agent = agent_connections[agentName];
             if (agent) {
+                addAgentLog(agentName, { level: 'warn', message: agent.in_game ? '正在停止机器人' : '正在取消连接' });
                 agent.starting = false;
                 agent.in_game = false;
                 agent.cancelled = true;
@@ -807,6 +879,7 @@ export function createMindServer(host_public = false, port = 8080) {
             agent.cancelled = false;
             agent.starting = true;
             agent.viewer = null;
+            addAgentLog(agentName, { level: 'info', message: '正在连接 Minecraft 服务器...' });
             agentsStatusUpdate();
             let result;
             try {
@@ -822,6 +895,9 @@ export function createMindServer(host_public = false, port = 8080) {
             current.startAttempt = null;
             if (!result.success) {
                 current.starting = false;
+                if (!result.cancelled) {
+                    addAgentLog(agentName, { level: 'error', message: `连接失败：${result.error || '未知错误'}` });
+                }
             }
             agentsStatusUpdate();
             if (typeof callback === 'function') callback(result);
@@ -832,6 +908,7 @@ export function createMindServer(host_public = false, port = 8080) {
                 mindcraft.destroyAgent(agentName);
                 delete agent_connections[agentName];
             }
+            delete agentLogs[agentName];
             removeBotSettings(agentName);
             agentsStatusUpdate();
         });
@@ -845,6 +922,7 @@ export function createMindServer(host_public = false, port = 8080) {
                 agent_connections[agentName].in_game = false;
                 agent_connections[agentName].viewer = null;
                 agent_connections[agentName].socket = null;
+                addAgentLog(agentName, { level: 'warn', message: '正在断开机器人' });
                 mindcraft.cancelAgentStart(agentName);
             }
             agentsStatusUpdate();
@@ -869,16 +947,44 @@ export function createMindServer(host_public = false, port = 8080) {
 		socket.on('send-message', (agentName, data) => {
 			if (!agent_connections[agentName]?.socket) {
 				console.warn(`Agent ${agentName} not in game, cannot send message via MindServer.`);
+                addAgentLog(agentName, { level: 'warn', message: '机器人未连接，消息未送达' });
                 return;
 			}
 			try {
+                if (data?.message) {
+                    addAgentLog(agentName, { level: 'admin', message: `管理员：${data.message}` });
+                }
                 agent_connections[agentName].socket.emit('send-message', data);
 			} catch (error) {
 				console.error('Error: ', error);
 			}
 		});
 
+        socket.on('agent-log', (payload) => {
+            const agentName = typeof payload?.agentName === 'string' ? payload.agentName : curAgentName;
+            const connection = agentName ? agent_connections[agentName] : null;
+            if (!connection || connection.socket !== socket) return;
+            addAgentLog(agentName, payload);
+        });
+
+        socket.on('get-agent-logs', (agentName, callback) => {
+            const logs = agent_connections[agentName] ? (agentLogs[agentName] || []) : [];
+            if (typeof callback === 'function') {
+                callback({ logs });
+            }
+        });
+
+        socket.on('clear-agent-logs', (agentName) => {
+            if (!agentLogs[agentName]) return;
+            agentLogs[agentName] = [];
+            io.emit('agent-logs-cleared', agentName);
+        });
+
         socket.on('bot-output', (agentName, message) => {
+            addAgentLog(agentName, {
+                level: String(message || '').startsWith('[LoginGuard]') ? 'error' : 'chat',
+                message,
+            });
             io.emit('bot-output', agentName, message);
         });
 

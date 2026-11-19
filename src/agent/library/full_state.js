@@ -9,8 +9,83 @@ import {
 } from "./world.js";
 import convoManager from '../conversation.js';
 
+const MAX_TASK_GOAL_LENGTH = 4000;
+const taskGoalCache = new WeakMap();
+
+function truncateText(value, maxLength) {
+    if (value === null || value === undefined) return null;
+    const text = String(value);
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, maxLength)}…`;
+}
+
+function getTaskState(agent) {
+    const task = agent.task;
+    const selfPrompter = agent.self_prompter;
+    let selfPromptState = 'stopped';
+    if (selfPrompter?.isActive()) selfPromptState = 'active';
+    else if (selfPrompter?.isPaused()) selfPromptState = 'paused';
+
+    const taskState = {
+        hasTask: !!(task && task.data),
+        selfPrompt: truncateText(selfPrompter?.prompt, MAX_TASK_GOAL_LENGTH),
+        selfPromptState,
+        npcGoals: [],
+        npcCurrentGoal: null,
+    };
+
+    if (task?.data) {
+        let goal = null;
+        try {
+            if (taskGoalCache.has(task)) {
+                goal = taskGoalCache.get(task);
+            } else {
+                goal = task.getAgentGoal();
+                taskGoalCache.set(task, goal);
+            }
+        } catch (err) {
+            console.warn('Failed to read task goal:', err.message || err);
+        }
+        const startTime = Number(task.taskStartTime);
+        taskState.id = task.data.task_id || null;
+        taskState.type = task.data.type || null;
+        taskState.goal = truncateText(goal, MAX_TASK_GOAL_LENGTH);
+        const timeout = Number(task.data.timeout);
+        taskState.timeoutSeconds = Number.isFinite(timeout) && timeout > 0 ? timeout : 300;
+        taskState.elapsedSeconds = Number.isFinite(startTime)
+            ? Math.max(0, Math.round((Date.now() - startTime) / 1000))
+            : 0;
+        taskState.agentCount = Number.isFinite(Number(task.data.agent_count)) ? Number(task.data.agent_count) : 1;
+        taskState.humanCount = Number.isFinite(Number(task.data.human_count)) ? Number(task.data.human_count) : 0;
+    }
+
+    const npcData = agent.npc?.data;
+    if (npcData) {
+        if (Array.isArray(npcData.goals)) {
+            taskState.npcGoals = npcData.goals.map(goal => ({
+                name: goal.name,
+                quantity: Number.isFinite(Number(goal.quantity)) ? Number(goal.quantity) : 1,
+            }));
+        }
+        if (npcData.curr_goal) {
+            taskState.npcCurrentGoal = {
+                name: npcData.curr_goal.name,
+                quantity: Number.isFinite(Number(npcData.curr_goal.quantity)) ? Number(npcData.curr_goal.quantity) : 1,
+            };
+        }
+    }
+
+    return taskState;
+}
+
 export function getFullState(agent) {
     const bot = agent.bot;
+    let taskState = null;
+    try {
+        taskState = getTaskState(agent);
+    } catch (err) {
+        console.warn('Failed to read task state:', err.message || err);
+    }
 
     const pos = getPosition(bot);
     const position = {
@@ -76,6 +151,7 @@ export function getFullState(agent) {
             kind: activity.kind,
             isIdle: agent.isIdle()
         },
+        task: taskState,
         surroundings: {
             below,
             legs,

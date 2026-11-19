@@ -352,6 +352,119 @@
             text-overflow: ellipsis;
             width: 100%;
         }
+        .agent-panels {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+            gap: 8px;
+            margin-top: 8px;
+            width: 100%;
+        }
+        .agent-panel {
+            min-width: 0;
+            background: #2f2f2f;
+            border: 1px solid #3d3d3d;
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+        .agent-panel > summary {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            list-style: none;
+            font-weight: 600;
+            font-size: 0.95em;
+            color: #e0e0e0;
+        }
+        .agent-panel > summary::-webkit-details-marker { display: none; }
+        .agent-panel > summary::before {
+            content: '▸';
+            color: #999;
+            font-size: 0.8em;
+        }
+        .agent-panel[open] > summary::before { content: '▾'; }
+        .panel-count {
+            font-size: 0.8em;
+            color: #888;
+            font-weight: normal;
+        }
+        .panel-clear-btn {
+            margin-left: auto;
+            background: #505050;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 2px 8px;
+            cursor: pointer;
+            font-size: 0.8em;
+            font-weight: normal;
+        }
+        .panel-clear-btn:hover { background: #5a5a5a; }
+        .task-body {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-top: 8px;
+            font-size: 0.9em;
+        }
+        .task-row {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+        }
+        .task-label {
+            flex: 0 0 64px;
+            color: #999;
+        }
+        .task-value {
+            flex: 1 1 auto;
+            min-width: 0;
+            word-break: break-word;
+        }
+        .task-goal {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            background: #262626;
+            border-radius: 4px;
+            padding: 6px 8px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .task-muted { color: #888; }
+        .task-status { font-weight: 600; }
+        .task-status.running { color: #4CAF50; }
+        .task-status.paused { color: #ffb74d; }
+        .task-status.stopped { color: #f44336; }
+        .task-list {
+            margin: 2px 0 0;
+            padding-left: 18px;
+            color: #ccc;
+        }
+        .agent-log {
+            height: 200px;
+            overflow-y: auto;
+            margin-top: 8px;
+            padding: 6px 8px;
+            background: #1b1b1b;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+        .log-line {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+        .log-time { color: #777; margin-right: 6px; }
+        .log-line.warn { color: #ffcc80; }
+        .log-line.error { color: #ef9a9a; }
+        .log-line.chat { color: #81d4fa; }
+        .log-line.admin { color: #c5e1a5; }
+        .log-empty { color: #888; font-style: italic; }
+        @media (max-width: 900px) {
+            .agent-panels { grid-template-columns: 1fr; }
+        }
         .start-btn:disabled {
             opacity: 0.4;
             cursor: not-allowed;
@@ -759,6 +872,12 @@
         const agentSettings = {};
         const agentLastMessage = {};
         const inventoryOpen = {};
+        const panelOpen = {};
+        const agentLogs = {};
+        const agentLogIds = {};
+        const logsLoaded = new Set();
+        const logsLoading = new Set();
+        const agentTaskState = {};
         let currentAgents = [];
 
         const ACTION_LABELS = {
@@ -990,6 +1109,10 @@
             subscribeToState();
             // Clear all cached settings on reconnect
             Object.keys(agentSettings).forEach(name => delete agentSettings[name]);
+            // Re-fetch log history so entries from the disconnected period are not lost
+            logsLoaded.clear();
+            logsLoading.clear();
+            currentAgents.forEach(agent => ensureAgentLogs(agent.name));
         });
         socket.on('disconnect', () => {
             updateStatus(false);
@@ -2076,6 +2199,16 @@
             }
         });
 
+        socket.on('agent-log', (agentName, entry) => {
+            appendAgentLog(agentName, entry);
+        });
+
+        socket.on('agent-logs-cleared', (agentName) => {
+            agentLogs[agentName] = [];
+            agentLogIds[agentName] = new Set();
+            renderAgentLog(agentName);
+        });
+
         // Subscribe to aggregated state updates (re-sent on each connect)
         socket.on('state-update', (states) => {
             window.lastStates = states;
@@ -2131,6 +2264,10 @@
                         actionEl.textContent = `动作：${translateActivity(st.action.current || 'Idle')}`;
                         const _statusColors = { acting: '#4CAF50', chatting: '#42a5f5', thinking: '#9e9e9e', stopped: '#f44336', idle: '#888' };
                         actionEl.style.color = _statusColors[st.action.kind] || '';
+                    }
+                    if (st.task) {
+                        agentTaskState[name] = st.task;
+                        renderAgentTask(name);
                     }
                     if (invGrid && st.inventory?.counts) {
                         const counts = st.inventory.counts;
@@ -2466,6 +2603,217 @@
             }[ch]));
         }
 
+        function getPanelOpen(name, panel) {
+            return panelOpen[name]?.[panel] !== false;
+        }
+
+        function onPanelToggle(name, panel, open) {
+            if (!panelOpen[name]) panelOpen[name] = {};
+            panelOpen[name][panel] = !!open;
+            if (panel === 'log' && open) {
+                const el = document.getElementById(`log-${name}`);
+                if (el) el.scrollTop = el.scrollHeight;
+            }
+        }
+        window.onPanelToggle = onPanelToggle;
+
+        function formatDuration(totalSeconds) {
+            const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            if (hours > 0) {
+                return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            }
+            return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+
+        function taskRow(label, valueHtml) {
+            return `<div class="task-row"><span class="task-label">${escapeHtml(label)}</span><div class="task-value">${valueHtml}</div></div>`;
+        }
+
+        function renderAgentTask(name) {
+            const el = document.getElementById(`task-${name}`);
+            if (!el) return;
+
+            const live = agentTaskState[name];
+            const agent = currentAgents.find(item => item.name === name);
+            const inGame = !!agent?.in_game;
+            const configured = agentSettings[name]?.task || null;
+            const rows = [];
+            const hasLiveTaskInfo = !!(live && (live.hasTask || live.selfPrompt || (live.npcGoals && live.npcGoals.length)));
+
+            if (hasLiveTaskInfo) {
+                let status = '空闲';
+                let statusClass = 'stopped';
+                if (!inGame) {
+                    status = '已断开';
+                } else if (live.selfPromptState === 'active') {
+                    status = '执行中';
+                    statusClass = 'running';
+                } else if (live.selfPromptState === 'paused') {
+                    status = '暂停（对话中）';
+                    statusClass = 'paused';
+                } else if (live.hasTask) {
+                    status = '已停止';
+                }
+                rows.push(taskRow('状态', `<span class="task-status ${statusClass}">${escapeHtml(status)}</span>`));
+
+                if (live.hasTask) {
+                    const taskId = live.id || '自定义任务';
+                    const taskType = live.type ? `（${escapeHtml(live.type)}）` : '';
+                    rows.push(taskRow('任务', `${escapeHtml(taskId)}${taskType}`));
+                    if (Number.isFinite(Number(live.elapsedSeconds))) {
+                        let elapsed = formatDuration(live.elapsedSeconds);
+                        if (Number(live.timeoutSeconds) > 0) {
+                            elapsed += ` / ${formatDuration(live.timeoutSeconds)}`;
+                        }
+                        rows.push(taskRow('耗时', escapeHtml(elapsed)));
+                    }
+                }
+
+                const goal = live.selfPrompt || live.goal;
+                if (goal) {
+                    rows.push(taskRow('当前目标', `<div class="task-goal">${escapeHtml(goal)}</div>`));
+                }
+
+                if (live.npcGoals && live.npcGoals.length) {
+                    const items = live.npcGoals.map(goalItem => {
+                        const current = live.npcCurrentGoal
+                            && live.npcCurrentGoal.name === goalItem.name
+                            && live.npcCurrentGoal.quantity === goalItem.quantity;
+                        return `<li>${current ? '▶ ' : ''}${escapeHtml(goalItem.name)} × ${escapeHtml(goalItem.quantity)}</li>`;
+                    }).join('');
+                    rows.push(taskRow('长期目标', `<ul class="task-list">${items}</ul>`));
+                }
+            } else if (configured && !live) {
+                rows.push(taskRow('状态', `<span class="task-status stopped">${inGame ? '等待任务信息' : '未连接'}</span>`));
+                rows.push(taskRow('任务', escapeHtml(configured.task_id || configured.type || '已配置任务')));
+                if (typeof configured.goal === 'string' && configured.goal) {
+                    rows.push(taskRow('目标', `<div class="task-goal">${escapeHtml(configured.goal)}</div>`));
+                } else if (configured.goal && typeof configured.goal === 'object') {
+                    rows.push(taskRow('目标', '<span class="task-muted">已按机器人分配，连接后显示</span>'));
+                }
+            } else {
+                rows.push('<div class="task-muted">无任务</div>');
+            }
+
+            el.innerHTML = `<div class="task-body">${rows.join('')}</div>`;
+        }
+
+        function formatLogTime(ts) {
+            const date = new Date(ts || Date.now());
+            return [date.getHours(), date.getMinutes(), date.getSeconds()]
+                .map(value => String(value).padStart(2, '0'))
+                .join(':');
+        }
+
+        function formatLogMessage(entry) {
+            if (entry.event === 'action-start') {
+                return `动作开始：${translateActionLabel(entry.label || '')}`;
+            }
+            if (entry.event === 'action-end') {
+                const label = translateActionLabel(entry.label || '');
+                const duration = Number.isFinite(Number(entry.durationMs))
+                    ? `（${(Number(entry.durationMs) / 1000).toFixed(1)} 秒）`
+                    : '';
+                const prefix = entry.level === 'error'
+                    ? '动作失败'
+                    : (entry.level === 'warn' ? '动作中断' : '动作完成');
+                return `${prefix}：${label}${duration}`;
+            }
+            return entry.message || '';
+        }
+
+        function logEntryHtml(entry) {
+            const level = ['warn', 'error', 'chat', 'admin'].includes(entry.level) ? entry.level : 'info';
+            return `<div class="log-line ${level}"><span class="log-time">${escapeHtml(formatLogTime(entry.ts))}</span>${escapeHtml(formatLogMessage(entry))}</div>`;
+        }
+
+        function updateLogCount(name) {
+            const countEl = document.getElementById(`logCount-${name}`);
+            if (countEl) countEl.textContent = String((agentLogs[name] || []).length);
+        }
+
+        function renderAgentLog(name) {
+            const el = document.getElementById(`log-${name}`);
+            updateLogCount(name);
+            if (!el) return;
+            const entries = agentLogs[name] || [];
+            if (!entries.length) {
+                el.innerHTML = '<div class="log-empty">暂无日志</div>';
+                return;
+            }
+            const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+            el.innerHTML = entries.map(logEntryHtml).join('');
+            if (nearBottom) el.scrollTop = el.scrollHeight;
+        }
+
+        function appendAgentLog(name, entry) {
+            if (!entry || entry.id === undefined || entry.id === null) return;
+            if (!agentLogIds[name]) agentLogIds[name] = new Set();
+            if (agentLogIds[name].has(entry.id)) return;
+            agentLogIds[name].add(entry.id);
+
+            const entries = agentLogs[name] || (agentLogs[name] = []);
+            entries.push(entry);
+            if (entries.length > 500) {
+                const removed = entries.splice(0, entries.length - 500);
+                removed.forEach(item => agentLogIds[name].delete(item.id));
+            }
+
+            const el = document.getElementById(`log-${name}`);
+            if (!el) {
+                updateLogCount(name);
+                return;
+            }
+            const emptyEl = el.querySelector('.log-empty');
+            if (emptyEl) emptyEl.remove();
+            const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+            el.insertAdjacentHTML('beforeend', logEntryHtml(entry));
+            while (el.children.length > 500) {
+                el.firstElementChild.remove();
+            }
+            if (nearBottom || entries.length === 1) el.scrollTop = el.scrollHeight;
+            updateLogCount(name);
+        }
+
+        function ensureAgentLogs(name) {
+            if (logsLoaded.has(name) || logsLoading.has(name)) return;
+            logsLoading.add(name);
+            socket.emit('get-agent-logs', name, res => {
+                logsLoading.delete(name);
+                logsLoaded.add(name);
+                const incoming = Array.isArray(res?.logs) ? res.logs : [];
+                const merged = new Map();
+                for (const entry of [...(agentLogs[name] || []), ...incoming]) {
+                    if (!entry || entry.id === undefined || entry.id === null) continue;
+                    merged.set(entry.id, entry);
+                }
+                const entries = [...merged.values()]
+                    .sort((a, b) => a.id - b.id)
+                    .slice(-500);
+                agentLogs[name] = entries;
+                agentLogIds[name] = new Set(entries.map(entry => entry.id));
+                renderAgentLog(name);
+            });
+        }
+
+        function clearAgentLogs(name) {
+            socket.emit('clear-agent-logs', name);
+        }
+        window.clearAgentLogs = clearAgentLogs;
+
+        function hydrateAgentPanels(name) {
+            const taskPanel = document.getElementById(`taskPanel-${name}`);
+            const logPanel = document.getElementById(`logPanel-${name}`);
+            if (taskPanel) taskPanel.open = getPanelOpen(name, 'task');
+            if (logPanel) logPanel.open = getPanelOpen(name, 'log');
+            renderAgentTask(name);
+            renderAgentLog(name);
+            ensureAgentLogs(name);
+        }
+
         function renderAgentCard(agent) {
             const cfg = agentSettings[agent.name] || {};
             const showViewer = agent.in_game && cfg.render_bot_view === true;
@@ -2486,6 +2834,8 @@
             const lastMessage = agentLastMessage[agent.name] || '';
             const invOpen = inventoryOpen[agent.name] === true;
             const invStyle = invOpen ? '' : 'display:none;';
+            const taskPanelOpen = getPanelOpen(agent.name, 'task');
+            const logPanelOpen = getPanelOpen(agent.name, 'log');
             return `
                     <div class="agent" id="agent-${agent.name}">
                         <div class="agent-grid">
@@ -2511,6 +2861,19 @@
                             </div>
                             <div id="lastMessage-${agent.name}" class="last-message" style="grid-column: 1 / -1;"><strong>最近消息：</strong> ${lastMessage}</div>
                         </div>
+                        <div class="agent-panels">
+                            <details class="agent-panel" id="taskPanel-${agent.name}" ${taskPanelOpen ? 'open' : ''} ontoggle="onPanelToggle('${agent.name}', 'task', this.open)">
+                                <summary>任务列表</summary>
+                                <div id="task-${agent.name}"></div>
+                            </details>
+                            <details class="agent-panel" id="logPanel-${agent.name}" ${logPanelOpen ? 'open' : ''} ontoggle="onPanelToggle('${agent.name}', 'log', this.open)">
+                                <summary>
+                                    日志 <span class="panel-count" id="logCount-${agent.name}">0</span>
+                                    <button type="button" class="panel-clear-btn" onclick="event.preventDefault(); event.stopPropagation(); clearAgentLogs('${agent.name}')">清空</button>
+                                </summary>
+                                <div class="agent-log" id="log-${agent.name}"></div>
+                            </details>
+                        </div>
                         <div class="controls-row">
                             <button class="start-btn" id="sendBtn-${agent.name}" disabled onclick="sendMessage('${agent.name}', document.getElementById('messageInput-${agent.name}').value)">发送</button>
                             <input class="msg-input" type="text" id="messageInput-${agent.name}" placeholder="输入消息..."
@@ -2527,6 +2890,7 @@
         }
 
         async function renderAgents(agents) {
+            currentAgents = agents;
             if (!agents.length) {
                 agentsDiv.innerHTML = '<div class="agent">暂无已连接的机器人</div>';
                 return;
@@ -2535,6 +2899,7 @@
             // If agentsDiv is empty, do a full render
             if (!agentsDiv.children.length) {
                 agentsDiv.innerHTML = agents.map(agent => renderAgentCard(agent)).join('');
+                agents.forEach(agent => hydrateAgentPanels(agent.name));
                 // Update all viewers after initial render
                 setTimeout(() => {
                     agents.forEach(a => {
@@ -2557,10 +2922,12 @@
                 if (el) {
                     // Update existing card
                     el.outerHTML = renderAgentCard(agent);
+                    hydrateAgentPanels(agent.name);
                     if (agent.in_game) updateAgentViewer(agent.name);
                 } else {
                     // Add new card
                     agentsDiv.insertAdjacentHTML('beforeend', renderAgentCard(agent));
+                    hydrateAgentPanels(agent.name);
                     if (agent.in_game) updateAgentViewer(agent.name);
                 }
             });
@@ -2571,6 +2938,12 @@
                 if (!agents.find(a => a.name === name)) {
                     el.remove();
                     delete inventoryOpen[name];
+                    delete panelOpen[name];
+                    delete agentLogs[name];
+                    delete agentLogIds[name];
+                    delete agentTaskState[name];
+                    logsLoaded.delete(name);
+                    logsLoading.delete(name);
                 }
             });
         }
@@ -2600,6 +2973,7 @@
             // If agentsDiv is empty, do a full render
             if (!agentsDiv.children.length) {
                 agentsDiv.innerHTML = agents.map(agent => renderAgentCard(agent)).join('');
+                agents.forEach(agent => hydrateAgentPanels(agent.name));
                 // Update all viewers after initial render
                 setTimeout(() => {
                     agents.forEach(a => {
@@ -2615,10 +2989,12 @@
                 if (el) {
                     // Update existing card
                     el.outerHTML = renderAgentCard(agent);
+                    hydrateAgentPanels(agent.name);
                     if (agent.in_game) updateAgentViewer(agent.name);
                 } else {
                     // Add new card
                     agentsDiv.insertAdjacentHTML('beforeend', renderAgentCard(agent));
+                    hydrateAgentPanels(agent.name);
                     if (agent.in_game) updateAgentViewer(agent.name);
                 }
             });
@@ -2629,6 +3005,12 @@
                 if (!agents.find(a => a.name === name)) {
                     el.remove();
                     delete inventoryOpen[name];
+                    delete panelOpen[name];
+                    delete agentLogs[name];
+                    delete agentLogIds[name];
+                    delete agentTaskState[name];
+                    logsLoaded.delete(name);
+                    logsLoading.delete(name);
                 }
             });
         });

@@ -1,5 +1,6 @@
 import { Agent } from '../agent/agent.js';
 import { serverProxy } from '../agent/mindserver_proxy.js';
+import { installLogForwarder } from '../agent/log_forwarder.js';
 import yargs from 'yargs';
 
 const args = process.argv.slice(2);
@@ -41,6 +42,7 @@ const argv = yargs(args)
     try {
         console.log('Connecting to MindServer');
         await serverProxy.connect(argv.name, argv.port);
+        installLogForwarder(argv.name);
         console.log('Starting agent');
         const agent = new Agent();
         serverProxy.setAgent(agent);
