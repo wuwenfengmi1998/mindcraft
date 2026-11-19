@@ -99,10 +99,19 @@ export async function craftRecipe(bot, itemName, num=1) {
     const inventory = world.getInventoryCounts(bot); //Items in the agents inventory
     const requiredIngredients = mc.ingredientsFromPrismarineRecipe(recipe); //Items required to use the recipe once.
     const craftLimit = mc.calculateLimitingResource(inventory, requiredIngredients);
-    
-    await bot.craft(recipe, Math.min(craftLimit.num, num), craftingTable);
-    if(craftLimit.num<num) log(bot, `Not enough ${craftLimit.limitingResource} to craft ${num}, crafted ${craftLimit.num}. You now have ${world.getInventoryCounts(bot)[itemName]} ${itemName}.`);
-    else log(bot, `Successfully crafted ${itemName}, you now have ${world.getInventoryCounts(bot)[itemName]} ${itemName}.`);
+    const craftCount = Math.min(craftLimit.num, num);
+
+    if (craftCount <= 0) {
+        log(bot, `You do not have the resources to craft a ${itemName}.`);
+        if (placedTable) {
+            await collectBlock(bot, 'crafting_table', 1);
+        }
+        return false;
+    }
+
+    await bot.craft(recipe, craftCount, craftingTable);
+    if(craftLimit.num<num) log(bot, `Not enough ${craftLimit.limitingResource} to craft ${num}, crafted ${craftCount}. You now have ${world.getInventoryCounts(bot)[itemName] ?? 0} ${itemName}.`);
+    else log(bot, `Successfully crafted ${itemName}, you now have ${world.getInventoryCounts(bot)[itemName] ?? 0} ${itemName}.`);
     if (placedTable) {
         await collectBlock(bot, 'crafting_table', 1);
     }

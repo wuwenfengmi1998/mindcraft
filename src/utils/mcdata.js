@@ -426,10 +426,9 @@ export function ingredientsFromPrismarineRecipe(recipe) {
             if(ingredient.id<0) continue;
             const ingredientName = getItemName(ingredient.id);
             requiredIngedients[ingredientName] ??=0;
-            requiredIngedients[ingredientName] -= ingredient.count;
-            //Yes, the `-=` is intended.
-            //prismarine-recipe uses positive numbers for the shaped ingredients but negative for unshaped.
-            //Why this is the case is beyond my understanding.
+            requiredIngedients[ingredientName] += Math.abs(ingredient.count);
+            //prismarine-recipe uses positive numbers for shaped ingredients but negative for unshaped.
+            //Use the absolute value so the limiting-resource calculation works for both.
         }
     return requiredIngedients;
 }
