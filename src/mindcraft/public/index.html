@@ -407,7 +407,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <div class="footer-left" id="footerStatus">配置设置，然后上传配置文件并创建机器人。</div>
+                <div class="footer-left" id="footerStatus">配置设置并上传配置文件；创建后在机器人卡片上点击“连接”。</div>
                 <div class="footer-actions">
                     <button id="uploadProfileBtn" class="start-btn">上传配置文件</button>
                     <button id="submitCreateAgentBtn" class="start-btn" disabled>创建机器人</button>
@@ -1173,18 +1173,29 @@
             if (btn) {
                 btn.textContent = '连接中...';
                 btn.disabled = true;
-                // Re-enable after 10s if still disabled (agent failed to connect)
-                setTimeout(() => {
-                    const retryBtn = document.querySelector(`button[onclick=\\"startAgent('${n}')\\"]`);
-                    const agentState = (window.currentAgents || []).find(a => a.name === n);
-                    const stillWaiting = agentState ? (!agentState.in_game && !agentState.socket_connected) : true;
-                    if (retryBtn && stillWaiting) {
-                        retryBtn.disabled = false;
-                        retryBtn.textContent = '连接';
-                    }
-                }, 10000);
             }
-            socket.emit('start-agent', n);
+            socket.emit('start-agent', n, (res) => {
+                if (res?.success) return;
+                const retryBtn = document.querySelector(`button[onclick="startAgent('${n}')"]`);
+                if (retryBtn) {
+                    retryBtn.disabled = false;
+                    retryBtn.textContent = '连接';
+                }
+                const messageDiv = document.getElementById(`lastMessage-${n}`);
+                if (messageDiv) {
+                    messageDiv.textContent = `连接失败：${res?.error || '未知错误'}`;
+                }
+            });
+            // Re-enable after 10s if still disabled (agent failed to connect)
+            setTimeout(() => {
+                const retryBtn = document.querySelector(`button[onclick="startAgent('${n}')"]`);
+                const agentState = (window.currentAgents || []).find(a => a.name === n);
+                const stillWaiting = agentState ? (!agentState.in_game && !agentState.socket_connected) : true;
+                if (retryBtn && stillWaiting) {
+                    retryBtn.disabled = false;
+                    retryBtn.textContent = '连接';
+                }
+            }, 10000);
         }
         function stopAgent(n) { socket.emit('stop-agent', n); }
         function destroyAgent(n) { socket.emit('destroy-agent', n); }

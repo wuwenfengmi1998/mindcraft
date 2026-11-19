@@ -7,7 +7,6 @@ cd "$ROOT"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 PROFILE="${MINDCRAFT_PROFILE:-./profiles/deepseek-ollama.json}"
-WAIT_SECONDS="${MINDCRAFT_WAIT_SECONDS:-120}"
 UI_URL="http://localhost:8080"
 
 info() {
@@ -129,22 +128,34 @@ if nc -z 127.0.0.1 8080 2>/dev/null; then
     exit 0
 fi
 
-if ! nc -z 127.0.0.1 55916 2>/dev/null; then
-    echo "[mindcraft] 未检测到 Minecraft 世界（127.0.0.1:55916）。"
-    echo "[mindcraft] 请在 HMCL 中启动 Minecraft 26.3 世界，然后："
-    echo "             Esc -> 对局域网开放 -> 端口 55916 -> 开始"
-    if [ "$WAIT_SECONDS" -gt 0 ]; then
-        echo "[mindcraft] 等待端口 55916，最长 ${WAIT_SECONDS} 秒..."
-        for ((i = 0; i < WAIT_SECONDS; i++)); do
-            if nc -z 127.0.0.1 55916 2>/dev/null; then break; fi
-            if [ $((i % 10)) -eq 0 ] && [ "$i" -gt 0 ]; then
-                echo "[mindcraft] 仍在等待 55916... ${i}s"
-            fi
-            sleep 1
-        done
+export MINDCRAFT_MANUAL_START="${MINDCRAFT_MANUAL_START:-1}"
+
+if [ "$MINDCRAFT_MANUAL_START" = "1" ]; then
+    if nc -z 127.0.0.1 55916 2>/dev/null; then
+        info "已检测到 Minecraft 世界（127.0.0.1:55916）。"
+    else
+        info "未检测到 Minecraft 世界（127.0.0.1:55916），可先在网页完成配置。"
+        info "启动世界并开放局域网后，在网页机器人卡片上点击“连接”。"
     fi
+else
+    WAIT_SECONDS="${MINDCRAFT_WAIT_SECONDS:-120}"
+    if ! nc -z 127.0.0.1 55916 2>/dev/null; then
+        echo "[mindcraft] 未检测到 Minecraft 世界（127.0.0.1:55916）。"
+        echo "[mindcraft] 请在 HMCL 中启动 Minecraft 26.3 世界，然后："
+        echo "             Esc -> 对局域网开放 -> 端口 55916 -> 开始"
+        if [ "$WAIT_SECONDS" -gt 0 ]; then
+            echo "[mindcraft] 等待端口 55916，最长 ${WAIT_SECONDS} 秒..."
+            for ((i = 0; i < WAIT_SECONDS; i++)); do
+                if nc -z 127.0.0.1 55916 2>/dev/null; then break; fi
+                if [ $((i % 10)) -eq 0 ] && [ "$i" -gt 0 ]; then
+                    echo "[mindcraft] 仍在等待 55916... ${i}s"
+                fi
+                sleep 1
+            done
+        fi
+    fi
+    nc -z 127.0.0.1 55916 2>/dev/null || fail "端口 55916 未开放"
 fi
-nc -z 127.0.0.1 55916 2>/dev/null || fail "端口 55916 未开放"
 
 AGENT_NAME="$(node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); process.stdout.write(p.name || 'agent');" "$PROFILE")"
 
@@ -153,8 +164,12 @@ if [ "${MINDCRAFT_VISION:-1}" = "1" ]; then
     export SETTINGS_JSON="$(node -e "let s={}; try { s = process.env.SETTINGS_JSON ? JSON.parse(process.env.SETTINGS_JSON) : {}; } catch {} s.allow_vision = true; s.render_bot_view = true; process.stdout.write(JSON.stringify(s));")"
 fi
 
-info "启动机器人：$AGENT_NAME"
-info "控制台：$UI_URL"
+if [ "$MINDCRAFT_MANUAL_START" = "1" ]; then
+    info "登记机器人：${AGENT_NAME}（等待网页点击“连接”）"
+else
+    info "启动机器人：$AGENT_NAME"
+fi
+info "Web 控制台：$UI_URL"
 info "按 Ctrl+C 停止"
 
 node main.js &

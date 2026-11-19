@@ -1,4 +1,4 @@
-import { createMindServer, registerAgent, numStateListeners } from './mindserver.js';
+import { createMindServer, registerAgent, numStateListeners, getAgentSettings } from './mindserver.js';
 import { AgentProcess } from '../process/agent_process.js';
 import { getServer } from './mcserver.js';
 import open from 'open';
@@ -6,14 +6,17 @@ import open from 'open';
 let mindserver;
 let connected = false;
 let agent_processes = {};
+let agent_indices = {};
 let agent_count = 0;
 let mindserver_port = 8080;
+let manual_start = false;
 
-export async function init(host_public=false, port=8080, auto_open_ui=true) {
+export async function init(host_public=false, port=8080, auto_open_ui=true, manualStart=false) {
     if (connected) {
         console.error('Already initiliazed!');
         return;
     }
+    manual_start = manualStart;
     mindserver = createMindServer(host_public, port);
     mindserver_port = port;
     connected = true;
@@ -39,7 +42,17 @@ export async function createAgent(settings) {
     let agent_name = settings.profile.name;
     const agentIndex = agent_count++;
     const viewer_port = 3000 + agentIndex;
+    agent_indices[agent_name] = agentIndex;
     registerAgent(settings, viewer_port);
+
+    if (manual_start) {
+        return {
+            success: true,
+            error: null,
+            pending: true
+        };
+    }
+
     let load_memory = settings.load_memory || false;
     let init_message = settings.init_message || null;
 
@@ -59,7 +72,7 @@ export async function createAgent(settings) {
 
         const agentProcess = new AgentProcess(agent_name, mindserver_port);
         agentProcess.start(load_memory, init_message, agentIndex);
-        agent_processes[settings.profile.name] = agentProcess;
+        agent_processes[agent_name] = agentProcess;
     } catch (error) {
         console.error(`创建机器人 ${agent_name} 时出错:`, error);
         destroyAgent(agent_name);
@@ -78,13 +91,37 @@ export function getAgentProcess(agentName) {
     return agent_processes[agentName];
 }
 
-export function startAgent(agentName) {
-    if (agent_processes[agentName]) {
-        agent_processes[agentName].forceRestart();
+export async function startAgent(agentName) {
+    const existingProcess = agent_processes[agentName];
+    if (existingProcess?.running) {
+        existingProcess.forceRestart();
+        return { success: true, error: null };
     }
-    else {
+    if (existingProcess) {
+        delete agent_processes[agentName];
+    }
+
+    const agentSettings = getAgentSettings(agentName);
+    if (!agentSettings) {
         console.error(`Cannot start agent ${agentName}; not found`);
+        return { success: false, error: `未找到机器人“${agentName}”` };
     }
+
+    try {
+        const server = await getServer(agentSettings.host, agentSettings.port, agentSettings.minecraft_version);
+        agentSettings.host = server.host;
+        agentSettings.port = server.port;
+        agentSettings.minecraft_version = server.version;
+    } catch (error) {
+        console.error(`Cannot start agent ${agentName}:`, error.message);
+        return { success: false, error: `无法连接 Minecraft 服务端：${error.message}` };
+    }
+
+    const agentIndex = agent_indices[agentName] ?? 0;
+    const agentProcess = new AgentProcess(agentName, mindserver_port);
+    agentProcess.start(agentSettings.load_memory || false, agentSettings.init_message || null, agentIndex);
+    agent_processes[agentName] = agentProcess;
+    return { success: true, error: null };
 }
 
 export function stopAgent(agentName) {

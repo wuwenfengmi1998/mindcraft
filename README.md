@@ -75,13 +75,13 @@ Double-click `start.command`, or run:
 npm start
 ```
 
-The launcher checks Node/npm, the 26.3 dependencies, `keys.json`, Ollama embeddings, and the Minecraft port before starting. It uses `profiles/deepseek-ollama.json` by default. To use another profile:
+The launcher checks Node/npm, the 26.3 dependencies, `keys.json`, and Ollama embeddings, then starts the web console at http://localhost:8080 right away. Minecraft does not need to be running yet: configure the bot in the browser first, open the world to LAN on port 55916, then click “连接” on the bot card. It uses `profiles/deepseek-ollama.json` by default. To use another profile:
 
 ```bash
 MINDCRAFT_PROFILE=./profiles/gpt.json npm start
 ```
 
-Use `npm run start:raw` to start `node main.js` without the preflight checks.
+Set `MINDCRAFT_MANUAL_START=0` to restore the previous behavior (wait for the Minecraft port and connect automatically). Use `npm run start:raw` to start `node main.js` without the preflight checks.
 
 
 # Configuration

@@ -44,6 +44,10 @@ export function logoutAgent(agentName) {
     }
 }
 
+export function getAgentSettings(agentName) {
+    return agent_connections[agentName]?.settings || null;
+}
+
 // Initialize the server
 export function createMindServer(host_public = false, port = 8080) {
     const app = express();
@@ -228,8 +232,9 @@ export function createMindServer(host_public = false, port = 8080) {
             mindcraft.stopAgent(agentName);
         });
 
-        socket.on('start-agent', (agentName) => {
-            mindcraft.startAgent(agentName);
+        socket.on('start-agent', async (agentName, callback) => {
+            const result = await mindcraft.startAgent(agentName);
+            if (typeof callback === 'function') callback(result);
         });
 
         socket.on('destroy-agent', (agentName) => {
