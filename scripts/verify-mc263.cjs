@@ -42,6 +42,12 @@ if (getVersion('26.3') !== '26.3') {
     failures.push(`prismarine-viewer 不支持 26.3：${getVersion('26.3')}`);
 }
 
+const itemRoot = path.dirname(require.resolve('prismarine-item/package.json'));
+const itemSource = fs.readFileSync(path.join(itemRoot, 'index.js'), 'utf8');
+if (!itemSource.includes('1.20.5+ data components')) {
+    failures.push('prismarine-item 缺少 26.3 附魔兼容补丁（执行 npx patch-package）');
+}
+
 const viewerRoot = path.dirname(require.resolve('prismarine-viewer/package.json'));
 for (const file of [
     'public/textures/26.3.png',

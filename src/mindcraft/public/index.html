@@ -244,6 +244,79 @@
             font-style: italic;
             padding: 12px 0;
         }
+        .account-card {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            background: #333;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+        }
+        .account-head {
+            width: 36px;
+            height: 36px;
+            flex: 0 0 auto;
+            border-radius: 4px;
+            background-color: #222;
+            background-repeat: no-repeat;
+            background-size: 288px 288px;
+            background-position: -36px -36px;
+            image-rendering: pixelated;
+        }
+        .account-head-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #4a4a4a;
+            color: #fff;
+            font-weight: 600;
+            font-size: 1.1em;
+            text-transform: uppercase;
+        }
+        .account-main {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        .account-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .account-type-badge {
+            font-size: 0.75em;
+            padding: 1px 7px;
+            border-radius: 10px;
+            background: #555;
+            color: #ddd;
+        }
+        .account-type-offline {
+            background: #6b5b3e;
+        }
+        .account-type-microsoft {
+            background: #2f5e3a;
+        }
+        .ms-user-code {
+            display: inline-block;
+            margin: 8px 0;
+            padding: 8px 12px;
+            background: #262626;
+            border: 1px solid #555;
+            border-radius: 6px;
+            color: #fff;
+            font-family: monospace;
+            font-size: 1.7em;
+            letter-spacing: 0.12em;
+        }
+        .account-login-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            line-height: 1.2;
+        }
         .agent-view-container {
             width: 100%;
             height: 100%;
@@ -255,6 +328,20 @@
             height: 100%;
             border: none;
             display: block;
+        }
+        .viewer-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+            padding: 12px;
+            background: #262626;
+            border-radius: 4px;
+            color: #bbb;
+            font-size: 0.9em;
+            text-align: center;
         }
         .last-message {
             font-style: italic;
@@ -521,6 +608,7 @@
         <div style="display:flex; gap:12px; flex-wrap:wrap;">
             <button id="openCreateAgentBtn" class="start-btn">新建机器人</button>
             <button id="openProviderManagerBtn" class="start-btn">模型供应商</button>
+            <button id="openAccountManagerBtn" class="start-btn">账号配置</button>
         </div>
         <div style="display:flex; gap:12px;">
             <button class="stop-btn" onclick="disconnectAllAgents()">断开所有机器人</button>
@@ -538,6 +626,7 @@
             <div class="modal-body">
                 <div id="createAgentSection">
                     <div class="form-section-title">机器人配置</div>
+                    <div id="profileAccountForm"></div>
                     <div id="profileForm"></div>
                     <div class="form-section-title">其他设置</div>
                     <div id="settingsForm"></div>
@@ -562,6 +651,8 @@
             </div>
             <div class="modal-body">
                 <div id="agentSettingsSection">
+                    <div class="form-section-title">机器人账号</div>
+                    <div id="agentAccountForm"></div>
                     <div class="form-section-title">机器人模型</div>
                     <div id="agentModelForm"></div>
                     <div class="form-section-title">其他设置</div>
@@ -615,12 +706,56 @@
         </div>
     </div>
 
+    <!-- Account Modal -->
+    <div id="accountModal" class="modal-backdrop">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 style="margin:0;">账号配置</h2>
+                <button id="closeAccountBtn" class="modal-close-btn">关闭</button>
+            </div>
+            <div class="modal-body">
+                <div class="provider-toolbar">
+                    <button id="addOfflineAccountBtn" class="start-btn">添加离线账号</button>
+                    <button id="loginMicrosoftBtn" class="start-btn">登录微软账号</button>
+                    <span id="accountStatus" class="provider-status"></span>
+                </div>
+                <div class="provider-meta" style="margin-bottom:10px;">离线账号创建后名字和 UUID 固定；在线账号使用 Microsoft 设备代码登录，需要拥有 Minecraft Java Edition，登录后自动拉取皮肤。</div>
+                <div id="offlineAccountForm" class="provider-form" style="display:none; grid-template-columns:1fr;">
+                    <label>账号名称
+                        <input id="offline-account-name" type="text" placeholder="3-16 位字母、数字或下划线">
+                    </label>
+                    <div class="provider-form-actions">
+                        <button id="saveOfflineAccountBtn" class="start-btn">添加</button>
+                        <button id="cancelOfflineAccountBtn" class="stop-btn" style="background:#777;">取消</button>
+                        <span id="offlineAccountError" class="provider-error"></span>
+                    </div>
+                </div>
+                <div id="microsoftLoginPanel" class="provider-form" style="display:none; grid-template-columns:1fr;">
+                    <div class="provider-meta">1. 打开 Microsoft 登录页面</div>
+                    <div class="provider-meta">2. 输入下面的代码并完成授权</div>
+                    <div id="msUserCode" class="ms-user-code">----</div>
+                    <div class="provider-form-actions">
+                        <button id="copyMsCodeBtn" class="start-btn">复制代码</button>
+                        <a id="msLoginLink" class="start-btn account-login-link" href="https://microsoft.com/link" target="_blank" rel="noopener">打开登录页面</a>
+                        <button id="cancelMsLoginBtn" class="stop-btn" style="background:#777;">取消</button>
+                        <span id="msLoginStatus" class="provider-status"></span>
+                    </div>
+                </div>
+                <div id="accountList"></div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const socket = io({ path: window.location.pathname + 'socket.io' })
         const agentsDiv = document.getElementById('agents');
         let settingsSpec = {};
         let availableProviders = [];
+        let availableAccounts = [];
         let providerFormMode = null;
+        let microsoftFlowId = null;
+        let microsoftPollTimer = null;
+        let microsoftLoginRequestId = 0;
         const agentSettings = {};
         const agentLastMessage = {};
         const inventoryOpen = {};
@@ -1182,7 +1317,7 @@
             form.style.gridTemplateColumns = 'repeat(auto-fit, minmax(320px, 1fr))';
             form.style.gap = '8px';
             Object.keys(settingsSpec).forEach(key => {
-                if (key === 'profile') return; // profile rendered by buildProfileForm
+                if (key === 'profile' || key === 'account_id') return;
                 const cfg = settingsSpec[key];
                 const wrapper = document.createElement('div');
                 wrapper.className = 'setting-wrapper';
@@ -1196,6 +1331,81 @@
                 wrapper.appendChild(input);
                 form.appendChild(wrapper);
             });
+            buildProfileAccountForm();
+        }
+
+        function buildProfileAccountForm() {
+            const container = document.getElementById('profileAccountForm');
+            if (!container) return;
+            container.innerHTML = '';
+            container.style.display = 'grid';
+            container.style.gridTemplateColumns = 'repeat(auto-fit, minmax(320px, 1fr))';
+            container.style.gap = '8px';
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'setting-wrapper';
+            const label = document.createElement('label');
+            label.textContent = '账号';
+            label.title = '选择账号后，机器人名称和认证方式由账号决定';
+            const select = document.createElement('select');
+            select.id = 'create-account-select';
+            const none = document.createElement('option');
+            none.value = '';
+            none.textContent = '不指定（手动设置名字和认证方式）';
+            select.appendChild(none);
+            for (const account of availableAccounts) {
+                const option = document.createElement('option');
+                option.value = account.id;
+                option.textContent = `${account.name}（${account.type === 'microsoft' ? '微软' : '离线'}）`;
+                select.appendChild(option);
+            }
+            select.addEventListener('change', () => {
+                applyCreateAccountSelection();
+                updateCreateAgentButtonState();
+            });
+            wrapper.appendChild(label);
+            wrapper.appendChild(select);
+            container.appendChild(wrapper);
+
+            const hint = document.createElement('div');
+            hint.id = 'createAccountHint';
+            hint.className = 'provider-meta';
+            hint.style.gridColumn = '1 / -1';
+            hint.textContent = availableAccounts.length === 0 ? '还没有账号，可先在“账号配置”中添加。' : '';
+            container.appendChild(hint);
+            applyCreateAccountSelection();
+        }
+
+        function applyCreateAccountSelection() {
+            const select = document.getElementById('create-account-select');
+            if (!select) return;
+            const account = availableAccounts.find(item => item.id === select.value);
+            const nameInput = document.getElementById('profile-setting-name');
+            const authInput = document.getElementById('setting-auth');
+            const hint = document.getElementById('createAccountHint');
+            if (!nameInput) return;
+
+            if (account) {
+                if (!nameInput.disabled) {
+                    nameInput.dataset.manualName = nameInput.value;
+                }
+                nameInput.value = account.name;
+                nameInput.disabled = true;
+                if (authInput) {
+                    authInput.value = account.type === 'microsoft' ? 'microsoft' : 'offline';
+                    authInput.disabled = true;
+                }
+                if (hint) hint.textContent = '机器人名称和认证方式由所选账号决定。';
+            } else {
+                nameInput.disabled = false;
+                if (nameInput.dataset.manualName !== undefined) {
+                    nameInput.value = nameInput.dataset.manualName;
+                    delete nameInput.dataset.manualName;
+                }
+                if (authInput) authInput.disabled = false;
+                if (hint) hint.textContent = availableAccounts.length === 0 ? '还没有账号，可先在“账号配置”中添加。' : '';
+            }
+            updateCreateAgentButtonState();
         }
 
         function getProfileFieldValue(key) {
@@ -1266,7 +1476,7 @@
             }
             const settings = { profile };
             Object.keys(settingsSpec).forEach(key => {
-                if (key === 'profile') return;
+                if (key === 'profile' || key === 'account_id') return;
                 const input = document.getElementById(`setting-${key}`);
                 if (!input) return;
                 const type = settingsSpec[key].type;
@@ -1274,16 +1484,22 @@
                 if (type === 'boolean') val = input.checked;
                 else if (type === 'number') val = Number(input.value);
                 else if (type === 'array' || type === 'object') {
-                    try { val = JSON.parse(input.value); }
-                    catch { val = input.value; }
+                    const raw = input.value.trim();
+                    if (raw === '') {
+                        val = settingsSpec[key].default ?? (type === 'array' ? [] : null);
+                    } else {
+                        try { val = JSON.parse(raw); }
+                        catch { val = input.value; }
+                    }
                 } else val = input.value;
                 settings[key] = val;
             });
+            settings.account_id = document.getElementById('create-account-select')?.value || '';
             socket.emit('create-agent', settings, res => {
                 if (!res.success) {
                     errorEl.textContent = res.error || '未知错误';
                 } else {
-                    buildProfileForm();
+                    buildSettingsForm();
                     errorEl.textContent = '';
                     hideCreateAgentModal();
                 }
@@ -1293,7 +1509,7 @@
         // Modal open/close logic
         const modalBackdrop = document.getElementById('createAgentModal');
         document.getElementById('openCreateAgentBtn').addEventListener('click', async () => {
-            await loadProvidersFromServer();
+            await Promise.all([loadProvidersFromServer(), loadAccountsFromServer()]);
             buildSettingsForm();
             modalBackdrop.style.display = 'flex';
         });
@@ -1532,6 +1748,326 @@
             }
         });
 
+        // Account management logic
+        const accountModal = document.getElementById('accountModal');
+
+        async function loadAccountsFromServer() {
+            try {
+                const res = await fetch('/api/accounts');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                availableAccounts = Array.isArray(data.accounts) ? data.accounts : [];
+            } catch (err) {
+                console.error('加载账号失败:', err);
+                availableAccounts = [];
+            }
+            return availableAccounts;
+        }
+
+        function setAccountStatus(message, isError = false) {
+            const statusEl = document.getElementById('accountStatus');
+            statusEl.textContent = message;
+            statusEl.style.color = isError ? '#f44336' : '#8bc34a';
+        }
+
+        function makeAccountButton(text, className, onClick) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = className;
+            button.textContent = text;
+            button.addEventListener('click', onClick);
+            return button;
+        }
+
+        function renderAccountList() {
+            const listEl = document.getElementById('accountList');
+            listEl.innerHTML = '';
+            if (availableAccounts.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'provider-empty';
+                empty.textContent = '还没有账号，点击“添加离线账号”或“登录微软账号”。';
+                listEl.appendChild(empty);
+                return;
+            }
+
+            for (const account of availableAccounts) {
+                const card = document.createElement('div');
+                card.className = 'account-card';
+
+                const head = document.createElement('div');
+                if (account.type === 'microsoft' && account.skinUrl) {
+                    head.className = 'account-head';
+                    head.style.backgroundImage = `url("${String(account.skinUrl).replace(/"/g, '%22')}")`;
+                    head.title = 'Minecraft 皮肤';
+                } else {
+                    head.className = 'account-head account-head-placeholder';
+                    head.textContent = String(account.name || '?').slice(0, 1);
+                }
+                card.appendChild(head);
+
+                const main = document.createElement('div');
+                main.className = 'account-main';
+
+                const title = document.createElement('div');
+                title.className = 'account-title';
+                const nameEl = document.createElement('span');
+                nameEl.className = 'provider-name';
+                nameEl.textContent = account.name;
+                const typeEl = document.createElement('span');
+                typeEl.className = `account-type-badge ${account.type === 'microsoft' ? 'account-type-microsoft' : 'account-type-offline'}`;
+                typeEl.textContent = account.type === 'microsoft' ? '微软' : '离线';
+                title.appendChild(nameEl);
+                title.appendChild(typeEl);
+                main.appendChild(title);
+
+                const uuidEl = document.createElement('div');
+                uuidEl.className = 'provider-meta';
+                uuidEl.textContent = `UUID：${account.uuid}`;
+                main.appendChild(uuidEl);
+
+                if (account.type === 'microsoft' && account.lastLoginAt) {
+                    const loginEl = document.createElement('div');
+                    loginEl.className = 'provider-meta';
+                    loginEl.textContent = `上次登录：${new Date(account.lastLoginAt).toLocaleString()}`;
+                    main.appendChild(loginEl);
+                }
+
+                const actions = document.createElement('div');
+                actions.className = 'provider-actions';
+                actions.appendChild(makeAccountButton('复制 UUID', 'start-btn', () => copyAccountUuid(account)));
+                if (account.type === 'microsoft') {
+                    actions.appendChild(makeAccountButton('重新登录', 'start-btn', () => beginMicrosoftLogin(account.id)));
+                }
+                actions.appendChild(makeAccountButton('删除', 'stop-btn', () => deleteManagedAccount(account)));
+                main.appendChild(actions);
+
+                card.appendChild(main);
+                listEl.appendChild(card);
+            }
+        }
+
+        async function copyText(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch {
+                return false;
+            }
+        }
+
+        async function copyAccountUuid(account) {
+            const ok = await copyText(account.uuid);
+            setAccountStatus(ok ? `已复制 ${account.name} 的 UUID` : '复制失败，请手动选择 UUID', !ok);
+        }
+
+        function closeOfflineAccountForm() {
+            document.getElementById('offlineAccountForm').style.display = 'none';
+            document.getElementById('offlineAccountError').textContent = '';
+            document.getElementById('offline-account-name').value = '';
+        }
+
+        async function openOfflineAccountForm() {
+            await cancelMicrosoftLoginUi();
+            document.getElementById('microsoftLoginPanel').style.display = 'none';
+            document.getElementById('offlineAccountError').textContent = '';
+            document.getElementById('offline-account-name').value = '';
+            document.getElementById('offlineAccountForm').style.display = 'grid';
+            document.getElementById('offline-account-name').focus();
+        }
+
+        async function saveOfflineAccount() {
+            const errorEl = document.getElementById('offlineAccountError');
+            errorEl.textContent = '';
+            const name = document.getElementById('offline-account-name').value.trim();
+            try {
+                const res = await fetch('/api/accounts/offline', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                closeOfflineAccountForm();
+                await loadAccountsFromServer();
+                renderAccountList();
+                setAccountStatus(`已添加离线账号 ${data.account.name}`);
+            } catch (err) {
+                errorEl.textContent = err.message;
+            }
+        }
+
+        async function deleteManagedAccount(account) {
+            const suffix = account.type === 'microsoft' ? '\n登录令牌缓存也会被删除。' : '';
+            if (!confirm(`确定删除账号“${account.name}”吗？${suffix}`)) {
+                return;
+            }
+            try {
+                const res = await fetch(`/api/accounts/${encodeURIComponent(account.id)}`, { method: 'DELETE' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                await loadAccountsFromServer();
+                renderAccountList();
+                setAccountStatus(`已删除账号 ${account.name}`);
+            } catch (err) {
+                setAccountStatus(`删除失败 - ${err.message}`, true);
+            }
+        }
+
+        function stopMicrosoftPolling() {
+            if (microsoftPollTimer !== null) {
+                clearTimeout(microsoftPollTimer);
+                microsoftPollTimer = null;
+            }
+            microsoftFlowId = null;
+        }
+
+        async function cancelMicrosoftLoginUi() {
+            microsoftLoginRequestId++;
+            const flowId = microsoftFlowId;
+            stopMicrosoftPolling();
+            if (!flowId) return;
+            try {
+                await fetch(`/api/accounts/microsoft/cancel/${encodeURIComponent(flowId)}`, { method: 'POST' });
+            } catch { /* ignore */ }
+        }
+
+        function closeMicrosoftLoginPanel() {
+            stopMicrosoftPolling();
+            document.getElementById('microsoftLoginPanel').style.display = 'none';
+        }
+
+        function setMicrosoftPanel(data) {
+            document.getElementById('microsoftLoginPanel').style.display = 'grid';
+            document.getElementById('msUserCode').textContent = data.userCode || '----';
+            const statusEl = document.getElementById('msLoginStatus');
+            if (data.status === 'success') {
+                statusEl.textContent = data.account ? `登录成功：${data.account.name}` : '登录成功';
+                statusEl.style.color = '#8bc34a';
+            } else if (data.status === 'error') {
+                statusEl.textContent = `登录失败：${data.error || '未知错误'}`;
+                statusEl.style.color = '#f44336';
+            } else if (data.userCode) {
+                statusEl.textContent = '等待授权...';
+                statusEl.style.color = '#bbb';
+            } else {
+                statusEl.textContent = '正在获取登录代码...';
+                statusEl.style.color = '#bbb';
+            }
+            let href = data.verificationUri || 'https://microsoft.com/link';
+            if (data.userCode && href.includes('microsoft.com/link') && !href.includes('otc=')) {
+                href += `${href.includes('?') ? '&' : '?'}otc=${encodeURIComponent(data.userCode)}`;
+            }
+            document.getElementById('msLoginLink').href = href;
+        }
+
+        async function handleMicrosoftLoginSuccess(data) {
+            stopMicrosoftPolling();
+            document.getElementById('microsoftLoginPanel').style.display = 'none';
+            await loadAccountsFromServer();
+            renderAccountList();
+            setAccountStatus(`已登录 Microsoft 账号 ${data.account?.name || ''}`);
+        }
+
+        function scheduleMicrosoftPoll(flowId, intervalSeconds) {
+            microsoftPollTimer = setTimeout(async () => {
+                if (microsoftFlowId !== flowId) return;
+                try {
+                    const res = await fetch(`/api/accounts/microsoft/status/${encodeURIComponent(flowId)}`);
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                    if (data.status === 'success' && data.account) {
+                        await handleMicrosoftLoginSuccess(data);
+                        return;
+                    }
+                    if (data.status === 'error') {
+                        stopMicrosoftPolling();
+                        setMicrosoftPanel(data);
+                        return;
+                    }
+                    setMicrosoftPanel(data);
+                    scheduleMicrosoftPoll(flowId, data.interval || intervalSeconds || 2);
+                } catch (err) {
+                    stopMicrosoftPolling();
+                    setMicrosoftPanel({ status: 'error', error: err.message });
+                }
+            }, Math.max(2, Number(intervalSeconds) || 2) * 1000);
+        }
+
+        async function beginMicrosoftLogin(accountId = null) {
+            closeOfflineAccountForm();
+            await cancelMicrosoftLoginUi();
+            const requestId = ++microsoftLoginRequestId;
+            setMicrosoftPanel({ status: 'starting' });
+            try {
+                const res = await fetch('/api/accounts/microsoft/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(accountId ? { accountId } : {}),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (requestId !== microsoftLoginRequestId) {
+                    if (data.flowId) {
+                        fetch(`/api/accounts/microsoft/cancel/${encodeURIComponent(data.flowId)}`, { method: 'POST' }).catch(() => {});
+                    }
+                    return;
+                }
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                if (data.status === 'success' && data.account) {
+                    await handleMicrosoftLoginSuccess(data);
+                    return;
+                }
+                if (data.status === 'error') throw new Error(data.error || 'Microsoft 登录失败');
+                setMicrosoftPanel(data);
+                if (data.flowId) {
+                    microsoftFlowId = data.flowId;
+                    scheduleMicrosoftPoll(data.flowId, data.interval);
+                }
+            } catch (err) {
+                if (requestId !== microsoftLoginRequestId) return;
+                setMicrosoftPanel({ status: 'error', error: err.message });
+            }
+        }
+
+        async function copyMicrosoftCode() {
+            const code = document.getElementById('msUserCode').textContent.trim();
+            if (!code || code === '----') return;
+            const ok = await copyText(code);
+            const statusEl = document.getElementById('msLoginStatus');
+            statusEl.textContent = ok ? '代码已复制' : '复制失败，请手动选择代码';
+            statusEl.style.color = ok ? '#8bc34a' : '#f44336';
+        }
+
+        document.getElementById('openAccountManagerBtn').addEventListener('click', async () => {
+            await cancelMicrosoftLoginUi();
+            closeOfflineAccountForm();
+            closeMicrosoftLoginPanel();
+            document.getElementById('accountStatus').textContent = '';
+            await loadAccountsFromServer();
+            renderAccountList();
+            accountModal.style.display = 'flex';
+        });
+
+        document.getElementById('closeAccountBtn').addEventListener('click', async () => {
+            await cancelMicrosoftLoginUi();
+            closeOfflineAccountForm();
+            closeMicrosoftLoginPanel();
+            accountModal.style.display = 'none';
+        });
+
+        document.getElementById('addOfflineAccountBtn').addEventListener('click', openOfflineAccountForm);
+        document.getElementById('cancelOfflineAccountBtn').addEventListener('click', closeOfflineAccountForm);
+        document.getElementById('saveOfflineAccountBtn').addEventListener('click', saveOfflineAccount);
+        document.getElementById('offline-account-name').addEventListener('keydown', event => {
+            if (event.key === 'Enter') saveOfflineAccount();
+        });
+        document.getElementById('loginMicrosoftBtn').addEventListener('click', () => beginMicrosoftLogin());
+        document.getElementById('cancelMsLoginBtn').addEventListener('click', async () => {
+            await cancelMicrosoftLoginUi();
+            document.getElementById('microsoftLoginPanel').style.display = 'none';
+            setAccountStatus('已取消 Microsoft 登录');
+        });
+        document.getElementById('copyMsCodeBtn').addEventListener('click', copyMicrosoftCode);
+
         socket.on('bot-output', (agentName, message) => {
             agentLastMessage[agentName] = message;
             const messageDiv = document.getElementById(`lastMessage-${agentName}`);
@@ -1640,6 +2176,7 @@
 
         // Agent settings modal logic
         const agentSettingsModal = document.getElementById('agentSettingsModal');
+        const agentAccountForm = document.getElementById('agentAccountForm');
         const agentModelForm = document.getElementById('agentModelForm');
         const agentSettingsForm = document.getElementById('agentSettingsForm');
         const applyBtn = document.getElementById('applyAgentSettingsBtn');
@@ -1649,9 +2186,92 @@
         let currentAgentName = null;
         let originalAgentSettings = null;
 
+        function buildAgentAccountField(settings) {
+            agentAccountForm.innerHTML = '';
+            agentAccountForm.style.display = 'grid';
+            agentAccountForm.style.gridTemplateColumns = 'repeat(auto-fit, minmax(320px, 1fr))';
+            agentAccountForm.style.gap = '8px';
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'setting-wrapper';
+            const label = document.createElement('label');
+            label.textContent = '账号';
+            label.title = '选择账号后，机器人将使用该账号的认证方式和游戏内名字';
+            const select = document.createElement('select');
+            select.id = 'agent-account-select';
+            const none = document.createElement('option');
+            none.value = '';
+            none.textContent = '不指定（使用认证方式设置）';
+            select.appendChild(none);
+            for (const account of availableAccounts) {
+                const option = document.createElement('option');
+                option.value = account.id;
+                option.textContent = `${account.name}（${account.type === 'microsoft' ? '微软' : '离线'}）`;
+                select.appendChild(option);
+            }
+            if (settings.account_id && !availableAccounts.some(account => account.id === settings.account_id)) {
+                const missing = document.createElement('option');
+                missing.value = settings.account_id;
+                missing.textContent = '已删除的账号';
+                missing.disabled = true;
+                select.appendChild(missing);
+            }
+            select.value = settings.account_id || '';
+            select.addEventListener('change', () => {
+                applyAgentAccountSelection();
+                onAgentSettingsChanged();
+            });
+            wrapper.appendChild(label);
+            wrapper.appendChild(select);
+            agentAccountForm.appendChild(wrapper);
+
+            const hint = document.createElement('div');
+            hint.id = 'agentAccountHint';
+            hint.className = 'provider-meta';
+            hint.style.gridColumn = '1 / -1';
+            agentAccountForm.appendChild(hint);
+        }
+
+        function applyAgentAccountSelection() {
+            const select = document.getElementById('agent-account-select');
+            if (!select) return;
+            const account = availableAccounts.find(item => item.id === select.value);
+            const authInput = document.getElementById('agent-setting-auth');
+            const hint = document.getElementById('agentAccountHint');
+            if (account) {
+                if (authInput) {
+                    authInput.value = account.type === 'microsoft' ? 'microsoft' : 'offline';
+                    authInput.disabled = true;
+                }
+                if (hint) {
+                    const currentName = originalAgentSettings?.profile?.name || '';
+                    if (account.name !== currentName) {
+                        hint.textContent = `应用后机器人将改名为 ${account.name} 并重启。`;
+                        hint.style.color = '#f0ad4e';
+                    } else {
+                        hint.textContent = '机器人将使用所选账号登录。';
+                        hint.style.color = '#8bc34a';
+                    }
+                }
+            } else {
+                if (authInput) authInput.disabled = false;
+                if (hint) {
+                    if (select.value) {
+                        hint.textContent = '该账号已删除，请重新选择。';
+                        hint.style.color = '#f44336';
+                    } else {
+                        hint.textContent = availableAccounts.length === 0 ? '还没有账号，可先在“账号配置”中添加。' : '';
+                        hint.style.color = '';
+                    }
+                }
+            }
+        }
+
         function buildAgentSettingsForm(settings) {
             const profile = settings.profile || {};
             const profileFields = settingsSpec.profile?.fields || {};
+
+            buildAgentAccountField(settings);
 
             agentModelForm.innerHTML = '';
             agentModelForm.style.display = 'grid';
@@ -1667,7 +2287,7 @@
             agentSettingsForm.style.gridTemplateColumns = 'repeat(auto-fit, minmax(320px, 1fr))';
             agentSettingsForm.style.gap = '8px';
             Object.keys(settingsSpec).forEach(key => {
-                if (key === 'profile') return; // profile models are edited above
+                if (key === 'profile' || key === 'account_id') return;
                 const cfg = settingsSpec[key];
                 const wrapper = document.createElement('div');
                 wrapper.className = 'setting-wrapper';
@@ -1683,6 +2303,7 @@
                 wrapper.appendChild(input);
                 agentSettingsForm.appendChild(wrapper);
             });
+            applyAgentAccountSelection();
             onAgentSettingsChanged();
         }
 
@@ -1693,9 +2314,17 @@
             const [settings] = await Promise.all([
                 fetchAgentSettings(name),
                 loadProvidersFromServer(),
+                loadAccountsFromServer(),
             ]);
-            originalAgentSettings = JSON.parse(JSON.stringify(settings || {}));
-            buildAgentSettingsForm(settings || {});
+            const normalized = JSON.parse(JSON.stringify(settings || {}));
+            for (const key of Object.keys(settingsSpec)) {
+                if (key === 'profile') continue;
+                if (normalized[key] === undefined) {
+                    normalized[key] = settingsSpec[key].default;
+                }
+            }
+            originalAgentSettings = normalized;
+            buildAgentSettingsForm(normalized);
             agentSettingsModal.style.display = 'flex';
         }
         window.openAgentSettings = openAgentSettings;
@@ -1704,7 +2333,7 @@
             const baseProfile = JSON.parse(JSON.stringify(originalAgentSettings?.profile || {}));
             const newSettings = { profile: collectModelFields('agent', baseProfile) };
             Object.keys(settingsSpec).forEach(key => {
-                if (key === 'profile') return;
+                if (key === 'profile' || key === 'account_id') return;
                 const cfg = settingsSpec[key];
                 const input = document.getElementById(`agent-setting-${key}`);
                 if (!input) return;
@@ -1712,11 +2341,17 @@
                 if (cfg.type === 'boolean') val = input.checked;
                 else if (cfg.type === 'number') val = Number(input.value);
                 else if (cfg.type === 'array' || cfg.type === 'object') {
-                    try { val = JSON.parse(input.value); }
-                    catch { val = input.value; }
+                    const raw = input.value.trim();
+                    if (raw === '') {
+                        val = cfg.default ?? (cfg.type === 'array' ? [] : null);
+                    } else {
+                        try { val = JSON.parse(raw); }
+                        catch { val = input.value; }
+                    }
                 } else val = input.value;
                 newSettings[key] = val;
             });
+            newSettings.account_id = document.getElementById('agent-account-select')?.value || '';
             return newSettings;
         }
 
@@ -1802,20 +2437,52 @@
                     applyBtn.disabled = false;
                     return;
                 }
-                agentSettings[agentName] = { ...edited, fetched: true };
-                updateAgentViewer(agentName);
+                if (res.renamed && res.name) {
+                    delete agentSettings[agentName];
+                    edited.profile.name = res.name;
+                    const account = availableAccounts.find(item => item.id === edited.account_id);
+                    if (account) {
+                        edited.auth = account.type === 'microsoft' ? 'microsoft' : 'offline';
+                    }
+                    agentSettings[res.name] = { ...edited, fetched: true };
+                } else {
+                    agentSettings[agentName] = { ...edited, fetched: true };
+                    updateAgentViewer(agentName);
+                }
+                if (res.warning) alert(res.warning);
                 closeAgentSettings();
             });
         });
 
         closeAgentSettingsBtn.addEventListener('click', closeAgentSettings);
 
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[ch]));
+        }
 
         function renderAgentCard(agent) {
             const cfg = agentSettings[agent.name] || {};
             const showViewer = agent.in_game && cfg.render_bot_view === true;
-            const viewerPort = agent.viewerPort;
-            const viewerHTML = showViewer ? `<div class="agent-view-container"><iframe class="agent-viewer" id="viewer-${agent.name}" src="http://localhost:${viewerPort}"></iframe></div>` : '';
+            const connecting = !agent.in_game && (agent.starting || agent.socket_connected);
+            const viewer = agent.viewer;
+            const viewerReady = viewer?.state === 'ready';
+            let viewerHTML = '';
+            if (showViewer) {
+                if (viewerReady) {
+                    viewerHTML = `<div class="agent-view-container"><iframe class="agent-viewer" id="viewer-${agent.name}" src="/viewer/${encodeURIComponent(agent.name)}/"></iframe></div>`;
+                } else {
+                    const message = viewer?.state === 'disabled'
+                        ? '机器人视角未启用'
+                        : (viewer?.error || '机器人视角启动中...');
+                    viewerHTML = `<div class="agent-view-container"><div class="viewer-placeholder">${escapeHtml(message)}</div></div>`;
+                }
+            }
             const lastMessage = agentLastMessage[agent.name] || '';
             const invOpen = inventoryOpen[agent.name] === true;
             const invStyle = invOpen ? '' : 'display:none;';
@@ -1853,7 +2520,7 @@
                             <button class="neutral-btn" onclick="sendMessage('${agent.name}', '!stop')" ${!agent.in_game ? 'disabled' : ''}>停止动作</button>
                             <button class="neutral-btn" onclick="sendMessage('${agent.name}', '!stay(-1)')" ${!agent.in_game ? 'disabled' : ''}>原地待命</button>
                             <button class="neutral-btn" onclick="restartAgent('${agent.name}')" ${!agent.in_game ? 'disabled' : ''}>重启</button>
-                            <button class="neutral-btn" ${agent.in_game ? `onclick=\"disconnectAgent('${agent.name}')\"` : (agent.socket_connected ? 'disabled' : `onclick=\"startAgent('${agent.name}')\"`)}>${agent.in_game ? '断开' : (agent.socket_connected ? '连接中...' : '连接')}</button>
+                            <button class="${agent.in_game ? 'neutral-btn' : (connecting ? 'stop-btn' : 'neutral-btn')}" id="connectBtn-${agent.name}" ${agent.in_game ? `onclick=\"disconnectAgent('${agent.name}')\"` : (connecting ? `onclick=\"cancelConnect('${agent.name}')\"` : `onclick=\"startAgent('${agent.name}')\"`)}>${agent.in_game ? '断开' : (connecting ? '取消连接' : '连接')}</button>
                             <button class="stop-btn" onclick="destroyAgent('${agent.name}')">移除</button>
                         </div>
                     </div>`;
@@ -1881,7 +2548,7 @@
             const prevAgents = currentAgents.reduce((acc, a) => ({ ...acc, [a.name]: a }), {});
             const changedAgents = agents.filter(a => {
                 const prev = prevAgents[a.name];
-                return !prev || prev.in_game !== a.in_game || prev.viewerPort !== a.viewerPort || prev.socket_connected !== a.socket_connected;
+                return !prev || prev.in_game !== a.in_game || prev.starting !== a.starting || JSON.stringify(prev.viewer) !== JSON.stringify(a.viewer) || prev.socket_connected !== a.socket_connected;
             });
 
             // Update only changed agents
@@ -1924,7 +2591,7 @@
             const prevAgents = currentAgents.reduce((acc, a) => ({ ...acc, [a.name]: a }), {});
             const changedAgents = agents.filter(a => {
                 const prev = prevAgents[a.name];
-                return !prev || prev.in_game !== a.in_game || prev.viewerPort !== a.viewerPort || prev.socket_connected !== a.socket_connected;
+                return !prev || prev.in_game !== a.in_game || prev.starting !== a.starting || JSON.stringify(prev.viewer) !== JSON.stringify(a.viewer) || prev.socket_connected !== a.socket_connected;
             });
 
             // Update current agents list
@@ -1968,34 +2635,51 @@
 
         function restartAgent(n) { socket.emit('restart-agent', n); }
         function disconnectAgent(n) { socket.emit('stop-agent', n); }
-        function startAgent(n) { 
-            const btn = document.querySelector(`button[onclick="startAgent('${n}')"]`);
+        function startAgent(n) {
+            const btn = document.getElementById(`connectBtn-${n}`);
             if (btn) {
-                btn.textContent = '连接中...';
-                btn.disabled = true;
+                btn.className = 'stop-btn';
+                btn.textContent = '取消连接';
+                btn.disabled = false;
+                btn.onclick = () => cancelConnect(n);
+            }
+            agentLastMessage[n] = '正在连接...';
+            const messageDiv = document.getElementById(`lastMessage-${n}`);
+            if (messageDiv) {
+                messageDiv.textContent = '正在连接...';
             }
             socket.emit('start-agent', n, (res) => {
-                if (res?.success) return;
-                const retryBtn = document.querySelector(`button[onclick="startAgent('${n}')"]`);
+                if (res?.success || res?.cancelled) return;
+                const retryBtn = document.getElementById(`connectBtn-${n}`);
                 if (retryBtn) {
-                    retryBtn.disabled = false;
+                    retryBtn.className = 'neutral-btn';
                     retryBtn.textContent = '连接';
+                    retryBtn.disabled = false;
+                    retryBtn.onclick = () => startAgent(n);
                 }
+                const errorMessage = `连接失败：${res?.error || '未知错误'}`;
+                agentLastMessage[n] = errorMessage;
                 const messageDiv = document.getElementById(`lastMessage-${n}`);
                 if (messageDiv) {
-                    messageDiv.textContent = `连接失败：${res?.error || '未知错误'}`;
+                    messageDiv.textContent = errorMessage;
                 }
             });
-            // Re-enable after 10s if still disabled (agent failed to connect)
-            setTimeout(() => {
-                const retryBtn = document.querySelector(`button[onclick="startAgent('${n}')"]`);
-                const agentState = (window.currentAgents || []).find(a => a.name === n);
-                const stillWaiting = agentState ? (!agentState.in_game && !agentState.socket_connected) : true;
-                if (retryBtn && stillWaiting) {
-                    retryBtn.disabled = false;
-                    retryBtn.textContent = '连接';
-                }
-            }, 10000);
+        }
+
+        function cancelConnect(n) {
+            socket.emit('stop-agent', n);
+            const btn = document.getElementById(`connectBtn-${n}`);
+            if (btn) {
+                btn.className = 'neutral-btn';
+                btn.textContent = '连接';
+                btn.disabled = false;
+                btn.onclick = () => startAgent(n);
+            }
+            agentLastMessage[n] = '已取消连接';
+            const messageDiv = document.getElementById(`lastMessage-${n}`);
+            if (messageDiv) {
+                messageDiv.textContent = '已取消连接';
+            }
         }
         function stopAgent(n) { socket.emit('stop-agent', n); }
         function destroyAgent(n) { socket.emit('destroy-agent', n); }

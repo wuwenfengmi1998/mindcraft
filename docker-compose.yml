@@ -10,8 +10,7 @@ services:
       - ./profiles:/app/profiles
       - ./bots:/app/bots
     ports:
-      - "3000-3003:3000-3003" # see the view from the camera mounted on your bot head: http://localhost:3000/
-      - 8080 # Mindserver port
+      - 8080 # Mindserver port; bot viewer is served at /viewer/<bot-name>/
     extra_hosts:
     - "host.docker.internal:host-gateway"
 

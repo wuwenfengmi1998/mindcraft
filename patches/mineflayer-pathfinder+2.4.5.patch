@@ -84,7 +84,7 @@ index b38bd30..2ca8205 100644
        bot.setControlState('jump', false)
        bot.setControlState('sprint', true)
 diff --git a/node_modules/mineflayer-pathfinder/lib/movements.js b/node_modules/mineflayer-pathfinder/lib/movements.js
-index a7e3505..84a0841 100644
+index a7e3505..77abb1e 100644
 --- a/node_modules/mineflayer-pathfinder/lib/movements.js
 +++ b/node_modules/mineflayer-pathfinder/lib/movements.js
 @@ -50,7 +50,12 @@ class Movements {
@@ -180,7 +180,22 @@ index a7e3505..84a0841 100644
        toPlace.push({ x: node.x + dir.x, y: node.y, z: node.z + dir.z, dx: 0, dy: 0, dz: 0, useOne: true }) // Indicate that a block should be used on this block not placed
      } else {
        cost += this.safeOrBreak(blockC, toBreak)
-@@ -554,6 +584,54 @@ class Movements {
+@@ -427,6 +457,14 @@ class Movements {
+     cost2 += this.safeOrBreak(blockC2, toBreak2)
+     if (blockD2.height - block0.height > 1.2) cost2 += this.safeOrBreak(blockD2, toBreak2)
+ 
++    // A flat diagonal step makes the 0.6-wide player hitbox pass through the
++    // shared corner of the two adjacent columns. If either side is not fully
++    // open, the client clips the corner block and the server rejects the move,
++    // which looks like the bot is stuck inside the wall. Only allow flat
++    // diagonals across completely clear corners; otherwise let the path go
++    // around the corner with two orthogonal steps.
++    if (y === 0 && (!blockB1.safe || !blockC1.safe || !blockB2.safe || !blockC2.safe)) return
++
+     if (cost1 < cost2) {
+       cost += cost1
+       toBreak.push(...toBreak1)
+@@ -554,6 +592,54 @@ class Movements {
      neighbors.push(new Move(node.x, node.y + 1, node.z, node.remainingBlocks - toPlace.length, cost, toBreak, toPlace))
    }
  
@@ -235,7 +250,7 @@ index a7e3505..84a0841 100644
    // Jump up, down or forward over a 1 block gap
    getMoveParkourForward (node, dir, neighbors) {
      const block0 = this.getBlock(node, 0, -1, 0)
-@@ -656,8 +734,27 @@ class Movements {
+@@ -656,8 +742,27 @@ class Movements {
      this.getMoveDown(node, neighbors)
      this.getMoveUp(node, neighbors)
  

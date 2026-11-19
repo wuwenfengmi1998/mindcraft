@@ -1,13 +1,41 @@
 import settings from '../settings.js';
-import prismarineViewer from 'prismarine-viewer';
 import { getVersion } from 'prismarine-viewer/viewer/lib/version.js';
-const mineflayerViewer = prismarineViewer.mineflayer;
+import { serverProxy } from '../mindserver_proxy.js';
+import { getViewerSocketPath, startViewerServer } from './viewer_server.js';
 
-export function addBrowserViewer(bot, count_id) {
-    if (!settings.render_bot_view) return;
-    if (!getVersion(bot.version)) {
-        console.warn(`Browser viewer disabled: prismarine-viewer does not support Minecraft ${bot.version}`);
+function reportViewerStatus(status) {
+    try {
+        serverProxy.reportViewerStatus(status);
+    } catch (err) {
+        console.warn('Failed to report viewer status:', err.message);
+    }
+}
+
+export async function addBrowserViewer(bot) {
+    if (!settings.render_bot_view) {
+        reportViewerStatus({ state: 'disabled' });
         return;
     }
-    mineflayerViewer(bot, { port: 3000+count_id, firstPerson: true, });
+
+    const viewerVersion = getVersion(bot.version);
+    if (!viewerVersion) {
+        const error = `prismarine-viewer 不支持 Minecraft ${bot.version}`;
+        console.warn(`Browser viewer disabled: ${error}`);
+        reportViewerStatus({ state: 'unsupported', error, botVersion: bot.version });
+        return;
+    }
+
+    reportViewerStatus({ state: 'starting', botVersion: bot.version, viewerVersion });
+
+    const socketPath = getViewerSocketPath();
+    try {
+        console.log(`Browser viewer starting on ${socketPath} (Minecraft ${bot.version})`);
+        await startViewerServer(bot, { socketPath, firstPerson: true });
+        console.log(`Prismarine viewer ready on ${socketPath}`);
+        reportViewerStatus({ state: 'ready', socketPath, botVersion: bot.version, viewerVersion });
+    } catch (err) {
+        const error = err.message || String(err);
+        console.warn('Browser viewer failed:', error);
+        reportViewerStatus({ state: 'error', error, botVersion: bot.version, viewerVersion });
+    }
 }

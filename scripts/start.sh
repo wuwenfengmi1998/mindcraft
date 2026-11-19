@@ -129,6 +129,7 @@ if nc -z 127.0.0.1 8080 2>/dev/null; then
 fi
 
 export MINDCRAFT_MANUAL_START="${MINDCRAFT_MANUAL_START:-1}"
+export MINDCRAFT_BOT_REGISTRY=1
 
 if [ "$MINDCRAFT_MANUAL_START" = "1" ]; then
     if nc -z 127.0.0.1 55916 2>/dev/null; then
@@ -165,7 +166,7 @@ if [ "${MINDCRAFT_VISION:-1}" = "1" ]; then
 fi
 
 if [ "$MINDCRAFT_MANUAL_START" = "1" ]; then
-    info "登记机器人：${AGENT_NAME}（等待网页点击“连接”）"
+    info "机器人列表由控制台管理（首次启动会登记默认机器人：${AGENT_NAME}）。"
 else
     info "启动机器人：$AGENT_NAME"
 fi
@@ -177,7 +178,8 @@ MAIN_PID=$!
 
 cleanup() {
     kill "$MAIN_PID" 2>/dev/null || true
-    pkill -f "init_agent.js ${AGENT_NAME}" 2>/dev/null || true
+    wait "$MAIN_PID" 2>/dev/null || true
+    pkill -f "$ROOT/src/process/init_agent.js" 2>/dev/null || true
 }
 
 trap 'cleanup; exit 130' INT TERM

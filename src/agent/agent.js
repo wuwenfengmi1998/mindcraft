@@ -109,7 +109,9 @@ export class Agent {
         this.bot.once('spawn', async () => {
             try {
                 clearTimeout(spawnTimeout);
-                addBrowserViewer(this.bot, count_id);
+                addBrowserViewer(this.bot).catch(err => {
+                    console.warn('Browser viewer failed:', err.message || err);
+                });
                 console.log('Initializing vision intepreter...');
                 this.vision_interpreter = new VisionInterpreter(this, settings.allow_vision);
 

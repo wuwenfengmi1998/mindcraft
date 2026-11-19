@@ -8,6 +8,9 @@ bots/**/action-code/**
 bots/**/
 keys.json
 providers.json
+accounts.json
+auth-cache/
+managed-bots.json
 services/viaproxy/jars/**
 services/viaproxy/logs/**
 services/viaproxy/plugins/**

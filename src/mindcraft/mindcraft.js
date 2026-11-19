@@ -10,6 +10,7 @@ let agent_indices = {};
 let agent_count = 0;
 let mindserver_port = 8080;
 let manual_start = false;
+const startTokens = new Map();
 
 export async function init(host_public=false, port=8080, auto_open_ui=true, manualStart=false) {
     if (connected) {
@@ -41,9 +42,8 @@ export async function createAgent(settings) {
     settings = JSON.parse(JSON.stringify(settings));
     let agent_name = settings.profile.name;
     const agentIndex = agent_count++;
-    const viewer_port = 3000 + agentIndex;
     agent_indices[agent_name] = agentIndex;
-    registerAgent(settings, viewer_port);
+    registerAgent(settings);
 
     if (manual_start) {
         return {
@@ -91,9 +91,18 @@ export function getAgentProcess(agentName) {
     return agent_processes[agentName];
 }
 
+export function isManualStart() {
+    return manual_start;
+}
+
 export async function startAgent(agentName) {
+    const token = {};
+    startTokens.set(agentName, token);
+    const isCancelled = () => startTokens.get(agentName) !== token;
+
     const existingProcess = agent_processes[agentName];
     if (existingProcess?.running) {
+        startTokens.delete(agentName);
         existingProcess.forceRestart();
         return { success: true, error: null };
     }
@@ -103,36 +112,65 @@ export async function startAgent(agentName) {
 
     const agentSettings = getAgentSettings(agentName);
     if (!agentSettings) {
+        startTokens.delete(agentName);
         console.error(`Cannot start agent ${agentName}; not found`);
         return { success: false, error: `未找到机器人“${agentName}”` };
     }
 
     try {
         const server = await getServer(agentSettings.host, agentSettings.port, agentSettings.minecraft_version);
+        if (isCancelled()) {
+            return { success: false, cancelled: true, error: '连接已取消' };
+        }
         agentSettings.host = server.host;
         agentSettings.port = server.port;
         agentSettings.minecraft_version = server.version;
     } catch (error) {
+        if (isCancelled()) {
+            return { success: false, cancelled: true, error: '连接已取消' };
+        }
         console.error(`Cannot start agent ${agentName}:`, error.message);
+        startTokens.delete(agentName);
         return { success: false, error: `无法连接 Minecraft 服务端：${error.message}` };
+    }
+
+    if (isCancelled()) {
+        return { success: false, cancelled: true, error: '连接已取消' };
     }
 
     const agentIndex = agent_indices[agentName] ?? 0;
     const agentProcess = new AgentProcess(agentName, mindserver_port);
-    agentProcess.start(agentSettings.load_memory || false, agentSettings.init_message || null, agentIndex);
-    agent_processes[agentName] = agentProcess;
+    try {
+        agentProcess.start(agentSettings.load_memory || false, agentSettings.init_message || null, agentIndex);
+        agent_processes[agentName] = agentProcess;
+    } catch (error) {
+        startTokens.delete(agentName);
+        return { success: false, error: error.message };
+    }
+    startTokens.delete(agentName);
     return { success: true, error: null };
 }
 
+export function cancelAgentStart(agentName) {
+    const hadPendingStart = startTokens.delete(agentName);
+    const process = agent_processes[agentName];
+    if (process) {
+        process.cancel();
+    }
+    return { success: true, cancelled: hadPendingStart || !!process };
+}
+
 export function stopAgent(agentName) {
+    startTokens.delete(agentName);
     if (agent_processes[agentName]) {
-        agent_processes[agentName].stop();
+        agent_processes[agentName].cancel();
     }
 }
 
 export function destroyAgent(agentName) {
+    startTokens.delete(agentName);
     if (agent_processes[agentName]) {
-        agent_processes[agentName].stop();
+        agent_processes[agentName].cancel();
         delete agent_processes[agentName];
     }
 }

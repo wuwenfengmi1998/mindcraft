@@ -4,3 +4,6 @@ bots/*/
 !bots/*
 keys.json
 providers.json
+accounts.json
+auth-cache/
+managed-bots.json

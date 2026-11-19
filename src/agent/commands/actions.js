@@ -336,6 +336,13 @@ export const actionsList = [
         })
     },
     {
+        name: '!useDoor',
+        description: 'Open the nearest wooden door and walk through it.',
+        perform: runAsAction(async (agent) => {
+            await skills.useDoor(agent.bot);
+        })
+    },
+    {
         name: '!stay',
         description: 'Stay in the current location no matter what. Pauses all modes.',
         params: {'type': { type: 'int', description: 'The number of seconds to stay. -1 for forever.', domain: [-1, Number.MAX_SAFE_INTEGER] }},

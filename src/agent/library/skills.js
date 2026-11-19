@@ -320,15 +320,24 @@ export async function attackNearest(bot, mobType, kill=true) {
      * @example
      * await skills.attackNearest(bot, "zombie", true);
      **/
+    const pause_self_preservation = mobType === 'drowned' || mobType === 'cod' || mobType === 'salmon' || mobType === 'tropical_fish' || mobType === 'squid';
     bot.modes.pause('cowardice');
-    if (mobType === 'drowned' || mobType === 'cod' || mobType === 'salmon' || mobType === 'tropical_fish' || mobType === 'squid')
+    if (pause_self_preservation) {
         bot.modes.pause('self_preservation'); // so it can go underwater. TODO: have an drowning mode so we don't turn off all self_preservation
-    const mob = world.getNearbyEntities(bot, 24).find(entity => entity.name === mobType);
-    if (mob) {
-        return await attackEntity(bot, mob, kill);
     }
-    log(bot, 'Could not find any '+mobType+' to attack.');
-    return false;
+    try {
+        const mob = world.getNearbyEntities(bot, 24).find(entity => entity.name === mobType);
+        if (mob) {
+            return await attackEntity(bot, mob, kill);
+        }
+        log(bot, 'Could not find any '+mobType+' to attack.');
+        return false;
+    } finally {
+        bot.modes.unpause('cowardice');
+        if (pause_self_preservation) {
+            bot.modes.unpause('self_preservation');
+        }
+    }
 }
 
 export async function attackEntity(bot, entity, kill=true) {
@@ -378,38 +387,43 @@ export async function defendSelf(bot, range=9) {
      * **/
     bot.modes.pause('self_defense');
     bot.modes.pause('cowardice');
-    let attacked = false;
-    let enemy = world.getNearestEntityWhere(bot, entity => mc.isHostile(entity), range);
-    while (enemy) {
-        await equipHighestAttack(bot);
-        if (bot.entity.position.distanceTo(enemy.position) >= 4 && enemy.name !== 'creeper' && enemy.name !== 'phantom') {
-            try {
-                bot.pathfinder.setMovements(new pf.Movements(bot));
-                await bot.pathfinder.goto(new pf.goals.GoalFollow(enemy, 3.5), true);
-            } catch (err) {/* might error if entity dies, ignore */}
+    try {
+        let attacked = false;
+        let enemy = world.getNearestEntityWhere(bot, entity => mc.isHostile(entity), range);
+        while (enemy) {
+            await equipHighestAttack(bot);
+            if (bot.entity.position.distanceTo(enemy.position) >= 4 && enemy.name !== 'creeper' && enemy.name !== 'phantom') {
+                try {
+                    bot.pathfinder.setMovements(new pf.Movements(bot));
+                    await bot.pathfinder.goto(new pf.goals.GoalFollow(enemy, 3.5), true);
+                } catch (err) {/* might error if entity dies, ignore */}
+            }
+            if (bot.entity.position.distanceTo(enemy.position) <= 2) {
+                try {
+                    bot.pathfinder.setMovements(new pf.Movements(bot));
+                    let inverted_goal = new pf.goals.GoalInvert(new pf.goals.GoalFollow(enemy, 2));
+                    await bot.pathfinder.goto(inverted_goal, true);
+                } catch (err) {/* might error if entity dies, ignore */}
+            }
+            bot.pvp.attack(enemy);
+            attacked = true;
+            await new Promise(resolve => setTimeout(resolve, 500));
+            enemy = world.getNearestEntityWhere(bot, entity => mc.isHostile(entity), range);
+            if (bot.interrupt_code) {
+                bot.pvp.stop();
+                return false;
+            }
         }
-        if (bot.entity.position.distanceTo(enemy.position) <= 2) {
-            try {
-                bot.pathfinder.setMovements(new pf.Movements(bot));
-                let inverted_goal = new pf.goals.GoalInvert(new pf.goals.GoalFollow(enemy, 2));
-                await bot.pathfinder.goto(inverted_goal, true);
-            } catch (err) {/* might error if entity dies, ignore */}
-        }
-        bot.pvp.attack(enemy);
-        attacked = true;
-        await new Promise(resolve => setTimeout(resolve, 500));
-        enemy = world.getNearestEntityWhere(bot, entity => mc.isHostile(entity), range);
-        if (bot.interrupt_code) {
-            bot.pvp.stop();
-            return false;
-        }
+        bot.pvp.stop();
+        if (attacked)
+            log(bot, `Successfully defended self.`);
+        else
+            log(bot, `No enemies nearby to defend self from.`);
+        return attacked;
+    } finally {
+        bot.modes.unpause('self_defense');
+        bot.modes.unpause('cowardice');
     }
-    bot.pvp.stop();
-    if (attacked)
-        log(bot, `Successfully defended self.`);
-    else
-        log(bot, `No enemies nearby to defend self from.`);
-    return attacked;
 }
 
 
@@ -491,6 +505,9 @@ export async function collectBlock(bot, blockType, num=1, exclude=null) {
             log(bot, `Don't have right tools to harvest ${blockType}.`);
             return false;
         }
+        let stuckInWater = false;
+        let stuckTargetUnderwater = false;
+        let stuckWatcher = null;
         try {
             let success = false;
             if (isLiquid) {
@@ -503,24 +520,63 @@ export async function collectBlock(bot, blockType, num=1, exclude=null) {
                 success = true;
             }
             else {
+                const targetUnderwater = isUnderwaterBlock(bot, block);
+                stuckWatcher = new StuckWatcher(bot, {
+                    waterOnly: true,
+                    onStuck: () => {
+                        stuckInWater = true;
+                        stuckTargetUnderwater = targetUnderwater;
+                        try { bot.collectBlock?.cancelTask?.()?.catch?.(() => {}); } catch (err) { /* task may not exist */ }
+                        bot.pathfinder?.stop();
+                    }
+                }).start();
                 await bot.collectBlock.collect(block);
                 success = true;
             }
-            if (success)
+            if (success && !stuckInWater)
                 collected++;
             await autoLight(bot);
         }
         catch (err) {
+            if (stuckInWater) {
+                if (stuckTargetUnderwater) {
+                    log(bot, `Stuck in water while collecting ${blockType} (underwater target); stopping.`);
+                } else {
+                    log(bot, `Stuck in water while collecting ${blockType}; trying to climb out.`);
+                    await climbOutOfWater(bot);
+                }
+                break;
+            }
+            if (bot.interrupt_code) {
+                break;
+            }
             if (err.name === 'NoChests') {
                 log(bot, `Failed to collect ${blockType}: Inventory full, no place to deposit.`);
                 break;
             }
-            else {
-                log(bot, `Failed to collect ${blockType}: ${err}.`);
-                continue;
+            if (err.name === 'PathStopped' || err.name === 'GoalChanged') {
+                // The stuck watchdog stopped pathfinding; do not retry the same
+                // unreachable block for every remaining count.
+                log(bot, `Stopped collecting ${blockType}: ${err.message || err}.`);
+                break;
             }
+            log(bot, `Failed to collect ${blockType}: ${err}.`);
+            continue;
         }
-        
+        finally {
+            stuckWatcher?.stop();
+        }
+
+        if (stuckInWater) {
+            if (stuckTargetUnderwater) {
+                log(bot, `Stuck in water while collecting ${blockType} (underwater target); stopping.`);
+            } else {
+                log(bot, `Stuck in water while collecting ${blockType}; trying to climb out.`);
+                await climbOutOfWater(bot);
+            }
+            break;
+        }
+
         if (bot.interrupt_code)
             break;  
     }
@@ -694,7 +750,16 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dont
         block_item = bot.inventory.findInventoryItem(item_name);
     }
     if (!block_item) {
-        log(bot, `Don't have any ${item_name} to place.`);
+        const available = [...new Set(bot.inventory.items()
+            .filter(item => bot.registry.blocksByName[item.name])
+            .map(item => item.name))].slice(0, 10);
+        log(bot, `Don't have any ${item_name} to place. Available blocks: ${available.length > 0 ? available.join(', ') : 'none'}.`);
+        if (item_name === 'dirt' || item_name === 'grass_block') {
+            log(bot, `Try !searchForBlock("grass_block", 32) and !collectBlocks("grass_block", 1) first.`);
+        }
+        else if (available.length === 0) {
+            log(bot, `No placeable blocks in inventory; try !searchForBlock("grass_block", 32) and !collectBlocks("grass_block", 1) first.`);
+        }
         return false;
     }
 
@@ -1098,18 +1163,89 @@ export async function goToGoal(bot, goal) {
         log(bot, `Path not found, but attempting to navigate anyway using destructive movements.`);
     }
 
-    const doorCheckInterval = startDoorInterval(bot);
+    let attempts = 0;
+    while (true) {
+        const doorCheckInterval = startDoorInterval(bot);
+        const stuckCheckInterval = startStuckInterval(bot);
+        let stuckInfo = null;
+        const watcher = new StuckWatcher(bot, {
+            onStuck: (info) => {
+                stuckInfo = info;
+                bot.pathfinder.stop();
+            }
+        }).start();
 
-    bot.pathfinder.setMovements(final_movements);
-    try {
-        await bot.pathfinder.goto(goal);
-        clearInterval(doorCheckInterval);
-        return true;
-    } catch (err) {
-        clearInterval(doorCheckInterval);
-        // we need to catch so we can clean up the door check interval, then rethrow the error
-        throw err;
+        bot.pathfinder.setMovements(final_movements);
+        try {
+            await bot.pathfinder.goto(goal);
+            return true;
+        } catch (err) {
+            if (stuckInfo && err.name === 'PathStopped' && attempts < 1) {
+                attempts++;
+                const p = bot.entity.position;
+                log(bot, `Stuck ${stuckInfo.inWater ? 'in water' : 'on land'} at ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)} (corrections=${stuckInfo.corrections}, pathResets=${stuckInfo.pathResets}); trying a different approach.`);
+                let recovered = false;
+                try {
+                    recovered = stuckInfo.inWater
+                        ? await climbOutOfWater(bot)
+                        : await nudgeUnstuck(bot);
+                } catch (recoveryErr) {
+                    log(bot, `Recovery failed: ${recoveryErr.message || recoveryErr}.`);
+                    return false;
+                }
+                if (!recovered) {
+                    log(bot, `Could not recover from being stuck at ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}; stopping instead of retrying the same path.`);
+                    return false;
+                }
+                await new Promise(resolve => setTimeout(resolve, 250));
+                continue;
+            }
+            // PathStopped is a normal "I gave up" result from pathfinder, not a
+            // code bug. Return false so callers can choose another strategy
+            // instead of turning it into a code-execution exception.
+            if (err.name === 'PathStopped' || err.name === 'NoPath' || err.name === 'Timeout' || err.name === 'GoalChanged') {
+                const p = bot.entity.position;
+                log(bot, `Could not reach the goal (${err.name}) at ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}; stopping.`);
+                return false;
+            }
+            throw err;
+        } finally {
+            watcher.stop();
+            clearInterval(doorCheckInterval);
+            clearInterval(stuckCheckInterval);
+        }
     }
+}
+
+let _stuckInterval = null;
+function startStuckInterval(bot, no_progress_ms = 20000) {
+    /**
+     * Stop pathfinding if the bot has not moved for a while. Without this, an
+     * unreachable goal makes pathfinder repeatedly recompute the same path
+     * (looking like the bot is twitching in place) forever.
+     * @param {MinecraftBot} bot, reference to the minecraft bot.
+     * @param {number} no_progress_ms, how long to wait without movement. Defaults to 20 seconds.
+     * @returns {number} the interval id.
+     **/
+    if (_stuckInterval) {
+        clearInterval(_stuckInterval);
+    }
+    let prev_pos = bot.entity.position.clone();
+    let last_progress = Date.now();
+    const interval = setInterval(() => {
+        if (bot.entity.position.distanceTo(prev_pos) >= 0.5) {
+            prev_pos = bot.entity.position.clone();
+            last_progress = Date.now();
+            return;
+        }
+        if (Date.now() - last_progress >= no_progress_ms) {
+            log(bot, `Pathfinding made no progress for ${Math.round(no_progress_ms / 1000)} seconds, stopping.`);
+            bot.pathfinder.stop();
+            last_progress = Date.now();
+        }
+    }, 1000);
+    _stuckInterval = interval;
+    return interval;
 }
 
 let _doorInterval = null;
@@ -1176,6 +1312,288 @@ function startDoorInterval(bot) {
     }, 200);
     _doorInterval = doorCheckInterval;
     return doorCheckInterval;
+}
+
+export class StuckWatcher {
+    /**
+     * Detects a bot that is "doing something" but not making horizontal
+     * progress. Vertical bobbing while swimming is not progress, which is why
+     * this watches x/z instead of the full 3D distance used elsewhere.
+     *
+     * It also listens for server position corrections (forcedMove) and the
+     * pathfinder's own "stuck" path reset, so a refusal to move can be
+     * recognized even when the bot never reports a collision.
+     */
+    constructor(bot, {
+        onStuck = null,
+        waterOnly = false,
+        noProgressMs = 2500,
+        waterNoProgressMs = 1500,
+        minHorizontalProgress = 0.15,
+        maxCorrections = 2,
+        maxPathResets = 2
+    } = {}) {
+        this.bot = bot;
+        this.onStuck = onStuck;
+        this.waterOnly = waterOnly;
+        this.noProgressMs = noProgressMs;
+        this.waterNoProgressMs = waterNoProgressMs;
+        this.minHorizontalProgress = minHorizontalProgress;
+        this.maxCorrections = maxCorrections;
+        this.maxPathResets = maxPathResets;
+        this.enabled = false;
+        this.triggered = false;
+        this.lastPos = null;
+        this.lastProgress = 0;
+        this.corrections = 0;
+        this.pathResets = 0;
+        this.interval = null;
+        this._onForcedMove = () => { if (this.enabled) this.corrections++; };
+        this._onPathReset = (reason) => {
+            if (this.enabled && reason === 'stuck') this.pathResets++;
+        };
+    }
+
+    start() {
+        if (this.enabled) return this;
+        this.enabled = true;
+        this.triggered = false;
+        this.lastPos = this.bot.entity.position.clone();
+        this.lastProgress = Date.now();
+        this.corrections = 0;
+        this.pathResets = 0;
+        this.bot.on('forcedMove', this._onForcedMove);
+        this.bot.on('path_reset', this._onPathReset);
+        this.interval = setInterval(() => this._check(), 250);
+        return this;
+    }
+
+    _isInWater() {
+        const bot = this.bot;
+        if (bot.entity?.isInWater) return true;
+        if (bot.entity?.isInLava) return true;
+        const feet = bot.blockAt(bot.entity.position);
+        const head = bot.blockAt(bot.entity.position.offset(0, 1, 0));
+        return feet?.name === 'water' || feet?.name === 'lava' ||
+            head?.name === 'water' || head?.name === 'lava';
+    }
+
+    _resetProgress() {
+        this.lastPos = this.bot.entity.position.clone();
+        this.lastProgress = Date.now();
+        this.corrections = 0;
+        this.pathResets = 0;
+    }
+
+    _check() {
+        if (!this.enabled || this.triggered) return;
+        const bot = this.bot;
+        if (!bot.entity?.position) return;
+        // Mining and placing are intentionally stationary. Do not count them
+        // as stuck; the old watchdog was repeatedly interrupting collect/dig.
+        if (bot.targetDigBlock || bot.pathfinder?.isMining() || bot.pathfinder?.isBuilding()) {
+            this._resetProgress();
+            return;
+        }
+        const inWater = this._isInWater();
+        if (this.waterOnly && !inWater) {
+            this._resetProgress();
+            return;
+        }
+        const pos = bot.entity.position;
+        const horizontal = Math.hypot(pos.x - this.lastPos.x, pos.z - this.lastPos.z);
+        // Swimming/ladder movement is real progress even when x/z are
+        // unchanged. Water bobbing is only a few centimetres, so it does not
+        // mask a bot that is stuck against the shore.
+        const vertical = Math.abs(pos.y - this.lastPos.y);
+        if (horizontal >= this.minHorizontalProgress || vertical >= 0.25) {
+            this._resetProgress();
+            return;
+        }
+        const timeout = inWater ? this.waterNoProgressMs : this.noProgressMs;
+        const noProgress = Date.now() - this.lastProgress >= timeout;
+        const corrected = this.corrections >= this.maxCorrections;
+        const reset = this.pathResets >= this.maxPathResets;
+        if (!noProgress && !corrected && !reset) return;
+
+        this.triggered = true;
+        this.enabled = false;
+        this._cleanup();
+        const info = {
+            inWater,
+            corrections: this.corrections,
+            pathResets: this.pathResets,
+            position: pos.clone()
+        };
+        try {
+            this.onStuck?.(info);
+        } catch (err) {
+            console.log('StuckWatcher callback error:', err.message);
+        }
+    }
+
+    _cleanup() {
+        if (this.interval) {
+            clearInterval(this.interval);
+            this.interval = null;
+        }
+        if (this.bot) {
+            this.bot.removeListener('forcedMove', this._onForcedMove);
+            this.bot.removeListener('path_reset', this._onPathReset);
+        }
+    }
+
+    stop() {
+        this.enabled = false;
+        this._cleanup();
+    }
+}
+
+function isStandableBlock(block) {
+    return !!block && block.boundingBox === 'block' &&
+        block.name !== 'water' && block.name !== 'lava';
+}
+
+function isPassableBlock(block) {
+    if (!block) return true;
+    if (block.name === 'water' || block.name === 'lava') return false;
+    if (block.boundingBox === 'empty') return true;
+    return ['short_grass', 'tall_grass', 'grass', 'fern', 'dead_bush', 'snow',
+        'seagrass', 'kelp', 'kelp_plant'].includes(block.name);
+}
+
+function isUnderwaterBlock(bot, block) {
+    if (!block) return false;
+    const above = bot.blockAt(block.position.offset(0, 1, 0));
+    return above?.name === 'water' || above?.name === 'lava';
+}
+
+function getShoreCandidates(bot, maxDistance = 6) {
+    const p = bot.entity.position;
+    const baseX = Math.floor(p.x);
+    const baseY = Math.floor(p.y);
+    const baseZ = Math.floor(p.z);
+    const candidates = [];
+    const seen = new Set();
+    for (let dx = -maxDistance; dx <= maxDistance; dx++) {
+        for (let dz = -maxDistance; dz <= maxDistance; dz++) {
+            const horizontal = Math.hypot(dx, dz);
+            if (horizontal < 1 || horizontal > maxDistance) continue;
+            for (let dy = -2; dy <= 1; dy++) {
+                const pos = new Vec3(baseX + dx, baseY + dy, baseZ + dz);
+                const key = `${pos.x},${pos.y},${pos.z}`;
+                if (seen.has(key)) continue;
+                const block = bot.blockAt(pos);
+                if (!isStandableBlock(block)) continue;
+                const above1 = bot.blockAt(pos.offset(0, 1, 0));
+                const above2 = bot.blockAt(pos.offset(0, 2, 0));
+                // Need room for the 1.8-block player, not just one air block.
+                if (!isPassableBlock(above1) || !isPassableBlock(above2)) continue;
+                let top = pos.y + 1;
+                if (block.shapes && block.shapes.length > 0) {
+                    top = pos.y + Math.max(...block.shapes.map(shape => shape[4]));
+                }
+                if (top < p.y - 1.0 || top > p.y + 1.2) continue;
+                seen.add(key);
+                candidates.push({
+                    block,
+                    top,
+                    distance: horizontal,
+                    target: new Vec3(pos.x + 0.5, top, pos.z + 0.5)
+                });
+            }
+        }
+    }
+    candidates.sort((a, b) => a.distance - b.distance);
+    return candidates;
+}
+
+export async function climbOutOfWater(bot) {
+    /**
+     * Try to leave water by swimming to the surface and then jumping onto a
+     * nearby shore. This deliberately uses direct controls instead of the
+     * pathfinder, because the pathfinder can keep recomputing the same
+     * blocked route while the bot bobs in place.
+     * @param {MinecraftBot} bot, reference to the minecraft bot.
+     * @returns {Promise<boolean>} true if the bot left the water.
+     **/
+    if (!bot?.entity) return false;
+    // The unstuck mode would otherwise stop us again while we are manually
+    // steering the bot out of the water. Only unpause it at the end if we
+    // paused it ourselves.
+    let pausedUnstuck = false;
+    try {
+        if (bot.modes && !bot.modes.isPaused?.('unstuck')) {
+            bot.modes.pause?.('unstuck');
+            pausedUnstuck = true;
+        }
+    } catch (err) { /* modes not ready */ }
+    try {
+        // Wait briefly for an in-flight collectblock task to release the bot,
+        // otherwise it can overwrite our movement controls.
+        const cancelTask = Promise.resolve(bot.collectBlock?.cancelTask?.()).catch(() => {});
+        await Promise.race([
+            cancelTask,
+            new Promise(resolve => setTimeout(resolve, 500))
+        ]);
+    } catch (err) { /* task may not exist */ }
+    bot.pathfinder?.stop();
+    bot.clearControlStates();
+
+    const start = bot.entity.position.clone();
+    const inLiquid = () => bot.entity.isInWater || bot.entity.isInLava;
+    try {
+        // Swim up to the surface first.
+        bot.setControlState('jump', true);
+        for (let i = 0; i < 8 && inLiquid(); i++) {
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
+        bot.setControlState('jump', false);
+        if (!inLiquid()) return true;
+
+        // Try the nearest shores first, then a wider search.
+        for (const radius of [5, 9]) {
+            const candidates = getShoreCandidates(bot, radius);
+            for (const candidate of candidates.slice(0, 5)) {
+                if (!inLiquid()) return true;
+                await bot.lookAt(new Vec3(candidate.target.x, candidate.target.y + 1.5, candidate.target.z), true);
+                bot.setControlState('forward', true);
+                bot.setControlState('jump', true);
+                const attemptStart = Date.now();
+                while (Date.now() - attemptStart < 1000 && inLiquid()) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                bot.clearControlStates();
+                const p = bot.entity.position;
+                const below = bot.blockAt(p.offset(0, -1, 0));
+                if (!inLiquid() && (bot.entity.onGround || below?.boundingBox === 'block')) {
+                    log(bot, `Climbed out of water at ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}.`);
+                    return true;
+                }
+            }
+        }
+        log(bot, `Could not climb out of water near ${start.x.toFixed(1)}, ${start.y.toFixed(1)}, ${start.z.toFixed(1)}. If you have no building blocks, try !searchForBlock("grass_block", 32) and !collectBlocks("grass_block", 1), then place a block at the water edge.`);
+        return false;
+    } finally {
+        bot.clearControlStates();
+        if (pausedUnstuck) {
+            try { bot.modes?.unpause?.('unstuck'); } catch (err) { /* modes not ready */ }
+        }
+    }
+}
+
+async function nudgeUnstuck(bot) {
+    bot.pathfinder?.stop();
+    bot.clearControlStates();
+    bot.setControlState('back', true);
+    await new Promise(resolve => setTimeout(resolve, 350));
+    bot.clearControlStates();
+    const before = bot.entity.position.clone();
+    bot.setControlState('forward', true);
+    bot.setControlState('jump', true);
+    await new Promise(resolve => setTimeout(resolve, 800));
+    bot.clearControlStates();
+    return bot.entity.position.distanceTo(before) > 0.25;
 }
 
 export async function goToPosition(bot, x, y, z, min_distance=2) {
@@ -1311,20 +1729,32 @@ export async function goToPlayer(bot, username, distance=3) {
         return true;
     }
 
-    bot.modes.pause('self_defense');
-    bot.modes.pause('cowardice');
-    let player = bot.players[username].entity
+    let player = bot.players[username]?.entity
     if (!player) {
         log(bot, `Could not find ${username}.`);
         return false;
     }
 
+    bot.modes.pause('self_defense');
+    bot.modes.pause('cowardice');
     distance = Math.max(distance, 0.5);
     const goal = new pf.goals.GoalFollow(player, distance);
 
-    await goToGoal(bot, goal, true);
+    let reached = false;
+    try {
+        reached = await goToGoal(bot, goal);
+    } finally {
+        bot.modes.unpause('self_defense');
+        bot.modes.unpause('cowardice');
+    }
+
+    if (!reached) {
+        log(bot, `Could not reach ${username}.`);
+        return false;
+    }
 
     log(bot, `You have reached ${username}.`);
+    return true;
 }
 
 
@@ -1421,7 +1851,11 @@ export async function moveAway(bot, distance) {
         }
     }
 
-    await goToGoal(bot, inverted_goal);
+    const reached = await goToGoal(bot, inverted_goal);
+    if (!reached) {
+        log(bot, `Could not move away from ${pos.floored()}.`);
+        return false;
+    }
     let new_pos = bot.entity.position;
     log(bot, `Moved away from ${pos.floored()} to ${new_pos.floored()}.`);
     return true;
@@ -1452,24 +1886,28 @@ export async function avoidEnemies(bot, distance=16) {
      * await skills.avoidEnemies(bot, 8);
      **/
     bot.modes.pause('self_preservation'); // prevents damage-on-low-health from interrupting the bot
-    let enemy = world.getNearestEntityWhere(bot, entity => mc.isHostile(entity), distance);
-    while (enemy) {
-        const follow = new pf.goals.GoalFollow(enemy, distance+1); // move a little further away
-        const inverted_goal = new pf.goals.GoalInvert(follow);
-        bot.pathfinder.setMovements(new pf.Movements(bot));
-        bot.pathfinder.setGoal(inverted_goal, true);
-        await new Promise(resolve => setTimeout(resolve, 500));
-        enemy = world.getNearestEntityWhere(bot, entity => mc.isHostile(entity), distance);
-        if (bot.interrupt_code) {
-            break;
+    try {
+        let enemy = world.getNearestEntityWhere(bot, entity => mc.isHostile(entity), distance);
+        while (enemy) {
+            const follow = new pf.goals.GoalFollow(enemy, distance+1); // move a little further away
+            const inverted_goal = new pf.goals.GoalInvert(follow);
+            bot.pathfinder.setMovements(new pf.Movements(bot));
+            bot.pathfinder.setGoal(inverted_goal, true);
+            await new Promise(resolve => setTimeout(resolve, 500));
+            enemy = world.getNearestEntityWhere(bot, entity => mc.isHostile(entity), distance);
+            if (bot.interrupt_code) {
+                break;
+            }
+            if (enemy && bot.entity.position.distanceTo(enemy.position) < 3) {
+                await attackEntity(bot, enemy, false);
+            }
         }
-        if (enemy && bot.entity.position.distanceTo(enemy.position) < 3) {
-            await attackEntity(bot, enemy, false);
-        }
+        log(bot, `Moved ${distance} away from enemies.`);
+        return true;
+    } finally {
+        bot.pathfinder.stop();
+        bot.modes.unpause('self_preservation');
     }
-    bot.pathfinder.stop();
-    log(bot, `Moved ${distance} away from enemies.`);
-    return true;
 }
 
 export async function stay(bot, seconds=30) {
@@ -1481,16 +1919,21 @@ export async function stay(bot, seconds=30) {
      * @example
      * await skills.stay(bot);
      **/
-    bot.modes.pause('self_preservation');
-    bot.modes.pause('unstuck');
-    bot.modes.pause('cowardice');
-    bot.modes.pause('self_defense');
-    bot.modes.pause('hunting');
-    bot.modes.pause('torch_placing');
-    bot.modes.pause('item_collecting');
+    const paused_modes = ['self_preservation', 'unstuck', 'cowardice', 'self_defense', 'hunting', 'torch_placing', 'item_collecting'];
+    for (const mode of paused_modes) {
+        bot.modes.pause(mode);
+    }
     let start = Date.now();
-    while (!bot.interrupt_code && (seconds === -1 || Date.now() - start < seconds*1000)) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+    try {
+        while (!bot.interrupt_code && (seconds === -1 || Date.now() - start < seconds*1000)) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+    } finally {
+        // Restore modes even when the action was interrupted; otherwise a single
+        // interrupted stay() leaves the bot unable to defend itself.
+        for (const mode of paused_modes) {
+            bot.modes.unpause(mode);
+        }
     }
     log(bot, `Stayed for ${(Date.now() - start)/1000} seconds.`);
     return true;
@@ -1509,8 +1952,11 @@ export async function useDoor(bot, door_pos=null) {
     if (!door_pos) {
         for (let door_type of ['oak_door', 'spruce_door', 'birch_door', 'jungle_door', 'acacia_door', 'dark_oak_door',
                                'mangrove_door', 'cherry_door', 'pale_oak_door', 'poplar_door', 'bamboo_door', 'crimson_door', 'warped_door']) {
-            door_pos = world.getNearestBlock(bot, door_type, 16).position;
-            if (door_pos) break;
+            const door = world.getNearestBlock(bot, door_type, 16);
+            if (door) {
+                door_pos = door.position;
+                break;
+            }
         }
     } else {
         door_pos = Vec3(door_pos.x, door_pos.y, door_pos.z);
@@ -1521,14 +1967,24 @@ export async function useDoor(bot, door_pos=null) {
     }
 
     bot.pathfinder.setGoal(new pf.goals.GoalNear(door_pos.x, door_pos.y, door_pos.z, 1));
+    const reach_deadline = Date.now() + 10000;
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    while (bot.pathfinder.isMoving()) {
+    while (bot.pathfinder.isMoving() && Date.now() < reach_deadline) {
         await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (bot.pathfinder.isMoving()) {
+        bot.pathfinder.stop();
+        log(bot, `Could not reach the door at ${door_pos}.`);
+        return false;
     }
     
     let door_block = bot.blockAt(door_pos);
+    if (!door_block) {
+        log(bot, `Could not find a door block at ${door_pos}.`);
+        return false;
+    }
     await bot.lookAt(door_pos);
-    if (!door_block._properties.open)
+    if (!door_block._properties?.open)
         await bot.activateBlock(door_block);
     
     bot.setControlState("forward", true);
@@ -1972,9 +2428,13 @@ export async function goToSurface(bot) {
         if (!block || block.name === 'air' || block.name === 'cave_air') {
             continue;
         }
-        await goToPosition(bot, block.position.x, block.position.y + 1, block.position.z, 0); // this will probably work most of the time but a custom mining and towering up implementation could be added if needed
-        log(bot, `Going to the surface at y=${y+1}.`);``
-        return true;
+        const reached = await goToPosition(bot, block.position.x, block.position.y + 1, block.position.z, 1); // this will probably work most of the time but a custom mining and towering up implementation could be added if needed
+        if (reached) {
+            log(bot, `Going to the surface at y=${y+1}.`);
+            return true;
+        }
+        log(bot, `Could not reach the surface at y=${y+1}; the way is blocked. Try mining the blocks above you.`);
+        return false;
     }
     return false;
 }

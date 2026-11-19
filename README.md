@@ -81,6 +81,10 @@ The launcher checks Node/npm, the 26.3 dependencies, `keys.json`, and Ollama emb
 MINDCRAFT_PROFILE=./profiles/gpt.json npm start
 ```
 
+While a bot is connecting, its card shows **取消连接**. Clicking it aborts the pending start or stops a connecting agent process without removing the bot.
+
+The optional bot live view is served from the same console origin at `/viewer/<bot-name>/`. Each agent runs its viewer over a local Unix domain socket (a named pipe on Windows), and MindServer proxies its HTTP and Socket.IO traffic, so no additional TCP port is used.
+
 Set `MINDCRAFT_MANUAL_START=0` to restore the previous behavior (wait for the Minecraft port and connect automatically). Use `npm run start:raw` to start `node main.js` without the preflight checks.
 
 
@@ -134,6 +138,19 @@ The web console can manage OpenAI-compatible model providers without editing `ke
 4. When creating a bot, choose a provider and a model for chat, code, vision, and embedding. Code and vision models can be left empty to follow the chat model; embedding can be left empty to fall back automatically.
 
 Provider settings are stored in `providers.json` in the project root, which is excluded from git. API keys are only returned to the browser in masked form and are never written into bot profiles. Existing `keys.json` providers remain supported; models can still be entered manually when no provider is selected. Model selections can be changed later from a bot's ⚙ settings; applying changes restarts the bot.
+
+### Accounts in the Web Console
+
+The web console also manages Minecraft accounts:
+
+- Offline accounts get a fixed UUID derived from the account name. The name cannot be changed after creation.
+- Microsoft accounts use the Microsoft device-code login flow, similar to HMCL. The console shows a login URL and one-time code, then fetches the player name, UUID, and skin after authorization.
+- Account metadata is stored in `accounts.json`; Microsoft token caches live in `auth-cache/`. Both are excluded from git, and the API never returns tokens to the browser.
+- Accounts can be selected when creating a bot or from a bot's ⚙ settings. Selecting an account sets the bot's in-game name and authentication; changing the account on an existing bot renames and re-registers it.
+
+### Bot Persistence
+
+The one-click launcher stores console-managed bots in `managed-bots.json`, which is excluded from git. On first start it seeds the registry from `MINDCRAFT_PROFILE` / `settings.js` profiles; afterwards the registry is authoritative. Removing a bot deletes it permanently, and an existing empty registry is not re-seeded. Delete `managed-bots.json` if you want the next start to seed from the profile again.
 
 ## Online Servers
 To connect to online servers your bot will need an official Microsoft/Minecraft account. You can use your own personal one, but will need another account if you want to connect too and play with it. To connect, change these lines in `settings.js`:
@@ -192,7 +209,7 @@ If you want more optimization and automatic launching of the minecraft world, yo
 If you intend to `allow_insecure_coding`, it is a good idea to run the app in a docker container to reduce risks of running unknown code. This is strongly recommended before connecting to remote servers, although still does not guarantee complete safety.
 
 ```bash
-docker build -t mindcraft . && docker run --rm --add-host=host.docker.internal:host-gateway -p 8080:8080 -p 3000-3003:3000-3003 -e SETTINGS_JSON='{"auto_open_ui":false,"profiles":["./profiles/gemini.json"],"host":"host.docker.internal"}' --volume ./keys.json:/app/keys.json --name mindcraft mindcraft
+docker build -t mindcraft . && docker run --rm --add-host=host.docker.internal:host-gateway -p 8080:8080 -e SETTINGS_JSON='{"auto_open_ui":false,"profiles":["./profiles/gemini.json"],"host":"host.docker.internal"}' --volume ./keys.json:/app/keys.json --name mindcraft mindcraft
 ```
 or simply
 ```bash

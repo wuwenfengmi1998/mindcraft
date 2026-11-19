@@ -1,8 +1,11 @@
 import * as Mindcraft from './src/mindcraft/mindcraft.js';
 import settings from './settings.js';
+import { loadBotRegistry, seedBotRegistry } from './src/mindcraft/botRegistry.js';
+import { getAccount, accountCacheExists } from './src/utils/accounts.js';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { readFileSync } from 'fs';
+import process from 'node:process';
 
 function parseArguments() {
     return yargs(hideBin(process.argv))
@@ -73,8 +76,64 @@ if (process.env.SETTINGS_JSON) {
 
 Mindcraft.init(false, settings.mindserver_port, settings.auto_open_ui, process.env.MINDCRAFT_MANUAL_START === '1');
 
-for (let profile of settings.profiles) {
-    const profile_json = JSON.parse(readFileSync(profile, 'utf8'));
-    settings.profile = profile_json;
-    Mindcraft.createAgent(settings);
+const useBotRegistry = process.env.MINDCRAFT_BOT_REGISTRY === '1';
+
+function settingsFromProfile(profilePath) {
+    const profile = JSON.parse(readFileSync(profilePath, 'utf8'));
+    return { ...settings, profile };
 }
+
+function accountReady(botSettings) {
+    const accountId = botSettings?.account_id;
+    if (!accountId) return true;
+    const account = getAccount(accountId);
+    if (!account) {
+        console.warn(`Skipping bot "${botSettings.profile?.name || 'unknown'}": account ${accountId} no longer exists.`);
+        return false;
+    }
+    if (account.type === 'microsoft' && !accountCacheExists(account.id)) {
+        console.warn(`Skipping bot "${botSettings.profile?.name || 'unknown'}": Microsoft account is not logged in.`);
+        return false;
+    }
+    return true;
+}
+
+if (useBotRegistry) {
+    const registry = loadBotRegistry();
+    let bots = registry.bots;
+    if (!registry.initialized) {
+        bots = settings.profiles
+            .map(profilePath => {
+                try {
+                    return { settings: settingsFromProfile(profilePath) };
+                } catch (err) {
+                    console.error(`Failed to load profile ${profilePath}:`, err.message);
+                    return null;
+                }
+            })
+            .filter(bot => bot?.settings?.profile?.name);
+        seedBotRegistry(bots);
+    }
+    for (const bot of bots) {
+        if (!accountReady(bot.settings)) continue;
+        Mindcraft.createAgent(bot.settings).catch(err => {
+            console.error(`Failed to restore bot "${bot.settings.profile?.name || 'unknown'}":`, err.message);
+        });
+    }
+} else {
+    for (let profile of settings.profiles) {
+        const profile_json = JSON.parse(readFileSync(profile, 'utf8'));
+        settings.profile = profile_json;
+        Mindcraft.createAgent(settings);
+    }
+}
+
+let shuttingDown = false;
+function handleShutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`Received ${signal}; stopping agents...`);
+    Mindcraft.shutdown();
+}
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));

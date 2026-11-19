@@ -120,6 +120,11 @@ class MindServerProxy {
     getSocket() {
         return this.socket;
     }
+
+    reportViewerStatus(status) {
+        if (!this.socket) return;
+        this.socket.emit('viewer-status', this.name, status);
+    }
 }
 
 // Create and export a singleton instance

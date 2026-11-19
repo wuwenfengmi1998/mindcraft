@@ -22,7 +22,8 @@ npm install --no-save --ignore-scripts \
 
 rm -rf node_modules/mineflayer/node_modules/minecraft-protocol
 
-if ! grep -q "updateLavaAvoidance" node_modules/mineflayer-pathfinder/index.js 2>/dev/null; then
+if ! grep -q "updateLavaAvoidance" node_modules/mineflayer-pathfinder/index.js 2>/dev/null \
+    || ! grep -q "1.20.5+ data components" node_modules/prismarine-item/index.js 2>/dev/null; then
     npx patch-package
 fi
 

@@ -90,15 +90,29 @@ const modes_list = [
     {
         name: 'unstuck',
         description: 'Attempt to get unstuck when in the same place for a while. Interrupts some actions.',
-        interrupts: ['all'],
+        // Actions that rely on pathfinder. The update below only stops the
+        // current path and lets the in-flight action fail; it never starts a new
+        // action or auto-prompts the model, so it cannot create a task-switch loop.
+        interrupts: [
+            'action:goToPlayer',
+            'action:goToCoordinates',
+            'action:moveAway',
+            'action:searchForBlock',
+            'action:searchForEntity',
+            'action:goToSurface',
+            'action:goToRememberedPlace',
+            'action:goToBed',
+            'action:useDoor',
+            'action:collectBlocks',
+            'action:digDown'
+        ],
         on: true,
         active: false,
         prev_location: null,
-        distance: 2,
+        distance: 0.5,
         stuck_time: 0,
         last_time: Date.now(),
-        max_stuck_time: 20,
-        prev_dig_block: null,
+        max_stuck_time: 15,
         update: async function (agent) {
             if (agent.isIdle()) { 
                 this.prev_location = null;
@@ -106,35 +120,47 @@ const modes_list = [
                 return; // don't get stuck when idle
             }
             const bot = agent.bot;
-            const cur_dig_block = bot.targetDigBlock;
-            if (cur_dig_block && !this.prev_dig_block) {
-                this.prev_dig_block = cur_dig_block;
-            }
-            if (this.prev_location && this.prev_location.distanceTo(bot.entity.position) < this.distance && cur_dig_block == this.prev_dig_block) {
-                this.stuck_time += (Date.now() - this.last_time) / 1000;
-            }
-            else {
+            // Mining/placing is intentionally stationary for a while. Counting that
+            // as "stuck" interrupted every collectBlocks/digDown action.
+            if (bot.targetDigBlock || bot.pathfinder.isMining() || bot.pathfinder.isBuilding()) {
                 this.prev_location = bot.entity.position.clone();
                 this.stuck_time = 0;
-                this.prev_dig_block = null;
+                this.last_time = Date.now();
+                return;
             }
-            const max_stuck_time = cur_dig_block?.name === 'obsidian' ? this.max_stuck_time * 2 : this.max_stuck_time;
-            if (this.stuck_time > max_stuck_time) {
-                say(agent, 'I\'m stuck!');
+            const pos = bot.entity.position;
+            // Use horizontal movement, not 3D distance: a bot that bobs up and
+            // down in water has not made progress, and the old 3D check hid it.
+            const moved = this.prev_location &&
+                Math.hypot(pos.x - this.prev_location.x, pos.z - this.prev_location.z) >= this.distance;
+            if (moved) {
+                this.prev_location = pos.clone();
                 this.stuck_time = 0;
-                execute(this, agent, async () => {
-                    const crashTimeout = setTimeout(() => { agent.cleanKill("Got stuck and couldn't get unstuck") }, 10000);
-                    await skills.moveAway(bot, 5);
-                    clearTimeout(crashTimeout);
-                    say(agent, 'I\'m free.');
-                });
+            }
+            else {
+                if (!this.prev_location) this.prev_location = pos.clone();
+                this.stuck_time += (Date.now() - this.last_time) / 1000;
+            }
+            const inWater = bot.entity.isInWater ||
+                bot.blockAt(pos)?.name === 'water' || bot.blockAt(pos.offset(0, 1, 0))?.name === 'water';
+            const max_stuck_time = inWater ? 5 : this.max_stuck_time;
+            if (this.stuck_time > max_stuck_time) {
+                say(agent, inWater ? 'I\'m stuck in water! Stopping the current movement.' : 'I\'m stuck! Stopping the current movement.');
+                this.stuck_time = 0;
+                // Stop the current path and let the model choose a new strategy.
+                // Do NOT run moveAway() here: it interrupts the in-flight action,
+                // auto-prompts the model and creates an endless task-switching loop.
+                bot.pathfinder.stop();
+                bot.clearControlStates();
+                if (inWater) {
+                    try { bot.collectBlock?.cancelTask?.()?.catch?.(() => {}); } catch (err) { /* task may not exist */ }
+                }
             }
             this.last_time = Date.now();
         },
         unpause: function () {
             this.prev_location = null;
             this.stuck_time = 0;
-            this.prev_dig_block = null;
         }
     },
     {
@@ -360,6 +386,10 @@ class ModeController {
 
     pause(mode_name) {
         modes_map[mode_name].paused = true;
+    }
+
+    isPaused(mode_name) {
+        return modes_map[mode_name]?.paused === true;
     }
 
     unpause(mode_name) {

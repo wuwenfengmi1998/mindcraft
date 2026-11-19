@@ -1,7 +1,10 @@
 import { Server } from 'socket.io';
 import express from 'express';
 import http from 'http';
+import httpProxy from 'http-proxy';
 import path from 'path';
+import os from 'os';
+import process from 'node:process';
 import { fileURLToPath } from 'url';
 import * as mindcraft from './mindcraft.js';
 import { readFileSync } from 'fs';
@@ -13,6 +16,16 @@ import {
     generateProviderId,
     validateProviderInput,
 } from '../utils/providers.js';
+import {
+    loadAccounts,
+    sanitizeAccount,
+    createOfflineAccount,
+    deleteAccount,
+    getAccount,
+    accountCacheExists,
+} from '../utils/accounts.js';
+import { startMicrosoftLogin, getMicrosoftLoginStatus, cancelMicrosoftLogin } from './microsoftAuth.js';
+import { upsertBotSettings, removeBotSettings, getBotsUsingAccount } from './botRegistry.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Mindserver is:
@@ -149,33 +162,72 @@ function validateProfileModels(profile) {
     return null;
 }
 
+function applyAccountToSettings(settings) {
+    const accountId = settings?.account_id;
+    if (!accountId) return null;
+    const account = getAccount(accountId);
+    if (!account) {
+        throw new Error('所选账号不存在');
+    }
+    if (account.type === 'microsoft' && !accountCacheExists(account.id)) {
+        throw new Error('所选 Microsoft 账号尚未登录，请先在账号配置中重新登录');
+    }
+    settings.auth = account.type === 'microsoft' ? 'microsoft' : 'offline';
+    if (!settings.profile) {
+        throw new Error('机器人配置缺失');
+    }
+    settings.profile.name = account.name;
+    return account;
+}
+
 class AgentConnection {
-    constructor(settings, viewer_port) {
+    constructor(settings) {
         this.socket = null;
         this.settings = settings;
         this.in_game = false;
+        this.starting = false;
+        this.cancelled = false;
+        this.startAttempt = null;
+        this.viewer = null;
         this.full_state = null;
-        this.viewer_port = viewer_port;
     }
     setSettings(settings) {
         this.settings = settings;
     }
 }
 
-export function registerAgent(settings, viewer_port) {
-    let agentConnection = new AgentConnection(settings, viewer_port);
+export function registerAgent(settings) {
+    let agentConnection = new AgentConnection(settings);
     agent_connections[settings.profile.name] = agentConnection;
 }
 
 export function logoutAgent(agentName) {
     if (agent_connections[agentName]) {
         agent_connections[agentName].in_game = false;
+        agent_connections[agentName].starting = false;
+        agent_connections[agentName].viewer = null;
         agentsStatusUpdate();
     }
 }
 
 export function getAgentSettings(agentName) {
     return agent_connections[agentName]?.settings || null;
+}
+
+// Viewer processes report a Unix socket path (or a Windows named pipe), never
+// a TCP port. Only accept paths inside the OS temp directory so an agent
+// cannot point MindServer's proxy at arbitrary local services.
+function normalizeViewerSocketPath(value) {
+    if (typeof value !== 'string') return null;
+    const socketPath = value.trim();
+    if (!socketPath || socketPath.length > 256) return null;
+    if (process.platform === 'win32') {
+        return socketPath.startsWith('\\\\.\\pipe\\') ? socketPath : null;
+    }
+    if (!path.isAbsolute(socketPath)) return null;
+    const tmpDir = os.tmpdir();
+    const prefix = tmpDir.endsWith(path.sep) ? tmpDir : tmpDir + path.sep;
+    return socketPath.startsWith(prefix) ? socketPath : null;
 }
 
 // Initialize the server
@@ -188,6 +240,59 @@ export function createMindServer(host_public = false, port = 8080) {
     // Serve static files
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     app.use(express.static(path.join(__dirname, 'public')));
+
+    // Path-based reverse proxy for per-agent prismarine-viewer servers.
+    const viewerProxy = httpProxy.createProxyServer({ ws: true });
+    viewerProxy.on('error', (err, req, res) => {
+        // Closing/refreshing an iframe commonly aborts in-flight requests.
+        if (err.code !== 'EPIPE' && err.code !== 'ECONNRESET') {
+            console.error('Viewer proxy error:', err.message);
+        }
+        if (res && typeof res.writeHead === 'function' && !res.headersSent) {
+            res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Viewer proxy error');
+        } else if (res && typeof res.destroy === 'function') {
+            res.destroy();
+        }
+    });
+
+    app.use('/viewer/:agent', (req, res) => {
+        const connection = agent_connections[req.params.agent];
+        const viewer = connection?.viewer;
+        if (viewer?.state !== 'ready' || !viewer.socketPath) {
+            res.status(503).send('机器人视角尚未就绪');
+            return;
+        }
+        // Express strips the mounted prefix from req.url.
+        viewerProxy.web(req, res, { target: { socketPath: viewer.socketPath } });
+    });
+
+    server.on('upgrade', (req, socket, head) => {
+        let parsed;
+        try {
+            parsed = new URL(req.url, 'http://localhost');
+        } catch {
+            return;
+        }
+        const match = parsed.pathname.match(/^\/viewer\/([^/]+)(\/.*)?$/);
+        if (!match) {
+            return;
+        }
+        const agentName = decodeURIComponent(match[1]);
+        const connection = agent_connections[agentName];
+        const viewer = connection?.viewer;
+        if (viewer?.state !== 'ready' || !viewer.socketPath) {
+            socket.destroy();
+            return;
+        }
+        req.url = `${match[2] || '/'}${parsed.search}`;
+        try {
+            viewerProxy.ws(req, socket, head, { target: { socketPath: viewer.socketPath } });
+        } catch (err) {
+            console.error('Viewer WebSocket proxy error:', err.message);
+            socket.destroy();
+        }
+    });
 
     // Model provider management API
     app.get('/api/providers', (req, res) => {
@@ -299,6 +404,73 @@ export function createMindServer(host_public = false, port = 8080) {
         }
     });
 
+    // Account management API
+    app.get('/api/accounts', (req, res) => {
+        res.json({ accounts: loadAccounts().map(sanitizeAccount) });
+    });
+
+    app.post('/api/accounts/offline', (req, res) => {
+        try {
+            const account = createOfflineAccount(req.body?.name);
+            res.json({ account: sanitizeAccount(account) });
+        } catch (err) {
+            res.status(400).json({ error: err.message || '添加离线账号失败' });
+        }
+    });
+
+    app.delete('/api/accounts/:id', (req, res) => {
+        try {
+            const usedBy = new Set(getBotsUsingAccount(req.params.id).map(bot => bot.name));
+            for (const [name, connection] of Object.entries(agent_connections)) {
+                if (connection.settings?.account_id === req.params.id) {
+                    usedBy.add(name);
+                }
+            }
+            if (usedBy.size > 0) {
+                res.status(400).json({
+                    error: `该账号正在被机器人使用：${[...usedBy].join('、')}。请先修改或移除这些机器人。`,
+                });
+                return;
+            }
+            const removed = deleteAccount(req.params.id);
+            if (!removed) {
+                res.status(404).json({ error: '账号不存在' });
+                return;
+            }
+            res.json({ success: true, account: sanitizeAccount(removed) });
+        } catch (err) {
+            res.status(500).json({ error: err.message || '删除账号失败' });
+        }
+    });
+
+    app.post('/api/accounts/microsoft/start', async (req, res) => {
+        try {
+            const accountId = req.body?.accountId || null;
+            const flow = await startMicrosoftLogin(accountId);
+            res.json(flow);
+        } catch (err) {
+            res.status(400).json({ error: err.message || '启动 Microsoft 登录失败' });
+        }
+    });
+
+    app.get('/api/accounts/microsoft/status/:flowId', (req, res) => {
+        const flow = getMicrosoftLoginStatus(req.params.flowId);
+        if (!flow) {
+            res.status(404).json({ error: '登录流程不存在或已过期' });
+            return;
+        }
+        res.json(flow);
+    });
+
+    app.post('/api/accounts/microsoft/cancel/:flowId', (req, res) => {
+        const flow = cancelMicrosoftLogin(req.params.flowId);
+        if (!flow) {
+            res.status(404).json({ error: '登录流程不存在或已过期' });
+            return;
+        }
+        res.json(flow);
+    });
+
     // Texture proxy: resolve item/block textures using minecraft-assets with version fallback
     app.get('/assets/item/:agent/:name.png', async (req, res) => {
         try {
@@ -383,7 +555,17 @@ export function createMindServer(host_public = false, port = 8080) {
                     delete settings[key];
                 }
             }
-            if (!settings.profile?.name) {
+            if (!settings.profile) {
+                callback({ success: false, error: '机器人配置缺失' });
+                return;
+            }
+            try {
+                applyAccountToSettings(settings);
+            } catch (err) {
+                callback({ success: false, error: err.message || '账号配置无效' });
+                return;
+            }
+            if (!settings.profile.name) {
                 console.error('机器人配置中必须包含名称');
                 callback({ success: false, error: '机器人配置中必须包含名称' });
                 return;
@@ -399,6 +581,9 @@ export function createMindServer(host_public = false, port = 8080) {
                 return;
             }
             let returned = await mindcraft.createAgent(settings);
+            if (returned.success) {
+                upsertBotSettings(settings);
+            }
             callback({ success: returned.success, error: returned.error });
             let name = settings.profile.name;
             if (!returned.success && agent_connections[name]) {
@@ -418,15 +603,48 @@ export function createMindServer(host_public = false, port = 8080) {
 
         socket.on('connect-agent-process', (agentName) => {
             if (agent_connections[agentName]) {
+                if (agent_connections[agentName].cancelled) {
+                    return;
+                }
                 agent_connections[agentName].socket = socket;
+                agent_connections[agentName].starting = false;
+                agent_connections[agentName].viewer = null;
                 agentsStatusUpdate();
             }
         });
 
+        socket.on('viewer-status', (agentName, status) => {
+            const connection = agent_connections[agentName];
+            if (!connection || connection.cancelled) return;
+            if (curAgentName && curAgentName !== agentName) return;
+            const allowedStates = new Set(['disabled', 'starting', 'ready', 'unsupported', 'error']);
+            let state = allowedStates.has(status?.state) ? status.state : 'error';
+            let error = status?.error ? String(status.error).slice(0, 500) : null;
+            const socketPath = normalizeViewerSocketPath(status?.socketPath);
+            if (state === 'ready' && !socketPath) {
+                state = 'error';
+                error = error || '视角服务 socket 路径无效';
+            }
+            connection.viewer = {
+                state,
+                socketPath: state === 'ready' ? socketPath : null,
+                error,
+                botVersion: status?.botVersion ? String(status.botVersion) : null,
+                viewerVersion: status?.viewerVersion ? String(status.viewerVersion) : null,
+                updatedAt: new Date().toISOString(),
+            };
+            agentsStatusUpdate();
+        });
+
         socket.on('login-agent', (agentName) => {
             if (agent_connections[agentName]) {
+                if (agent_connections[agentName].cancelled) {
+                    return;
+                }
                 agent_connections[agentName].socket = socket;
                 agent_connections[agentName].in_game = true;
+                agent_connections[agentName].starting = false;
+                agent_connections[agentName].viewer = null;
                 curAgentName = agentName;
                 agentsStatusUpdate();
             }
@@ -439,6 +657,8 @@ export function createMindServer(host_public = false, port = 8080) {
             if (agent_connections[curAgentName]) {
                 console.log(`Agent ${curAgentName} disconnected`);
                 agent_connections[curAgentName].in_game = false;
+                agent_connections[curAgentName].starting = false;
+                agent_connections[curAgentName].viewer = null;
                 agent_connections[curAgentName].socket = null;
                 agentsStatusUpdate();
             }
@@ -460,10 +680,20 @@ export function createMindServer(host_public = false, port = 8080) {
             agent_connections[agentName].socket.emit('chat-message', curAgentName, json);
         });
 
-        socket.on('set-agent-settings', (agentName, settings, callback) => {
+        socket.on('set-agent-settings', async (agentName, settings, callback) => {
             const agent = agent_connections[agentName];
             if (!agent) {
                 callback?.({ success: false, error: `未找到机器人“${agentName}”` });
+                return;
+            }
+            if (!settings.profile) {
+                callback?.({ success: false, error: '机器人配置缺失' });
+                return;
+            }
+            try {
+                applyAccountToSettings(settings);
+            } catch (err) {
+                callback?.({ success: false, error: err.message || '账号配置无效' });
                 return;
             }
             const modelError = validateProfileModels(settings.profile);
@@ -472,7 +702,68 @@ export function createMindServer(host_public = false, port = 8080) {
                 callback?.({ success: false, error: modelError });
                 return;
             }
+
+            const newName = settings.profile.name;
+            if (!newName) {
+                callback?.({ success: false, error: '机器人名称不能为空' });
+                return;
+            }
+
+            if (newName !== agentName) {
+                if (agent_connections[newName]) {
+                    callback?.({ success: false, error: '新账号对应的机器人名称已存在' });
+                    return;
+                }
+                const wasRunning = !!agent.socket || agent.in_game;
+                mindcraft.destroyAgent(agentName);
+                delete agent_connections[agentName];
+
+                let returned;
+                try {
+                    returned = await mindcraft.createAgent(settings);
+                } catch (err) {
+                    returned = { success: false, error: err.message };
+                }
+                if (!returned.success) {
+                    callback?.({ success: false, error: returned.error || '修改机器人账号失败' });
+                    agentsStatusUpdate();
+                    return;
+                }
+
+                removeBotSettings(agentName);
+                upsertBotSettings(settings);
+
+                const newConnection = agent_connections[newName];
+                const shouldStart = !mindcraft.isManualStart() || wasRunning;
+                if (newConnection && shouldStart && !newConnection.socket && !newConnection.in_game) {
+                    newConnection.starting = true;
+                    agentsStatusUpdate();
+                }
+
+                if (mindcraft.isManualStart() && wasRunning) {
+                    const started = await mindcraft.startAgent(newName);
+                    if (!started.success) {
+                        if (newConnection) {
+                            newConnection.starting = false;
+                        }
+                        callback?.({
+                            success: true,
+                            renamed: true,
+                            name: newName,
+                            warning: started.error || '机器人已改名，但自动启动失败，请手动点击“连接”。',
+                        });
+                        agentsStatusUpdate();
+                        return;
+                    }
+                }
+                callback?.({ success: true, renamed: true, name: newName });
+                agentsStatusUpdate();
+                return;
+            }
+
             agent.setSettings(settings);
+            upsertBotSettings(settings);
+            agent.viewer = null;
             if (agent.socket) agent.socket.emit('restart-agent');
             callback?.({ success: true });
         });
@@ -484,11 +775,55 @@ export function createMindServer(host_public = false, port = 8080) {
         });
 
         socket.on('stop-agent', (agentName) => {
-            mindcraft.stopAgent(agentName);
+            const agent = agent_connections[agentName];
+            if (agent) {
+                agent.starting = false;
+                agent.in_game = false;
+                agent.cancelled = true;
+                agent.startAttempt = null;
+                agent.viewer = null;
+                agent.socket = null;
+            }
+            mindcraft.cancelAgentStart(agentName);
+            agentsStatusUpdate();
         });
 
         socket.on('start-agent', async (agentName, callback) => {
-            const result = await mindcraft.startAgent(agentName);
+            const agent = agent_connections[agentName];
+            if (!agent) {
+                callback?.({ success: false, error: `未找到机器人“${agentName}”` });
+                return;
+            }
+            if (agent.in_game) {
+                callback?.({ success: true });
+                return;
+            }
+            if (agent.starting || agent.socket) {
+                callback?.({ success: true, alreadyStarting: true });
+                return;
+            }
+            const attempt = Symbol('start-agent');
+            agent.startAttempt = attempt;
+            agent.cancelled = false;
+            agent.starting = true;
+            agent.viewer = null;
+            agentsStatusUpdate();
+            let result;
+            try {
+                result = await mindcraft.startAgent(agentName);
+            } catch (err) {
+                result = { success: false, error: err.message || '连接失败' };
+            }
+            const current = agent_connections[agentName];
+            if (!current || current.startAttempt !== attempt) {
+                if (typeof callback === 'function') callback(result);
+                return;
+            }
+            current.startAttempt = null;
+            if (!result.success) {
+                current.starting = false;
+            }
+            agentsStatusUpdate();
             if (typeof callback === 'function') callback(result);
         });
 
@@ -497,20 +832,31 @@ export function createMindServer(host_public = false, port = 8080) {
                 mindcraft.destroyAgent(agentName);
                 delete agent_connections[agentName];
             }
+            removeBotSettings(agentName);
             agentsStatusUpdate();
         });
 
         socket.on('stop-all-agents', () => {
             console.log('Killing all agents');
             for (let agentName in agent_connections) {
-                mindcraft.stopAgent(agentName);
+                agent_connections[agentName].starting = false;
+                agent_connections[agentName].cancelled = true;
+                agent_connections[agentName].startAttempt = null;
+                agent_connections[agentName].in_game = false;
+                agent_connections[agentName].viewer = null;
+                agent_connections[agentName].socket = null;
+                mindcraft.cancelAgentStart(agentName);
             }
+            agentsStatusUpdate();
         });
 
         socket.on('shutdown', () => {
             console.log('Shutting down');
             for (let agentName in agent_connections) {
-                mindcraft.stopAgent(agentName);
+                agent_connections[agentName].starting = false;
+                agent_connections[agentName].cancelled = true;
+                agent_connections[agentName].startAttempt = null;
+                mindcraft.cancelAgentStart(agentName);
             }
             // wait 2 seconds
             setTimeout(() => {
@@ -552,6 +898,17 @@ export function createMindServer(host_public = false, port = 8080) {
     return server;
 }
 
+function publicViewer(viewer) {
+    if (!viewer) return null;
+    return {
+        state: viewer.state,
+        error: viewer.error,
+        botVersion: viewer.botVersion,
+        viewerVersion: viewer.viewerVersion,
+        updatedAt: viewer.updatedAt,
+    };
+}
+
 function agentsStatusUpdate(socket) {
     if (!socket) {
         socket = io;
@@ -562,7 +919,8 @@ function agentsStatusUpdate(socket) {
         agents.push({
             name: agentName, 
             in_game: conn.in_game,
-            viewerPort: conn.viewer_port,
+            starting: conn.starting,
+            viewer: publicViewer(conn.viewer),
             socket_connected: !!conn.socket
         });
     };

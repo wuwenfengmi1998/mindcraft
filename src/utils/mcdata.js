@@ -1,6 +1,8 @@
 import minecraftData from 'minecraft-data';
 import settings from '../agent/settings.js';
 import { createBot } from 'mineflayer';
+import prismarineAuth from 'prismarine-auth';
+import { getAccount, getAccountCacheDir, accountCacheExists } from './accounts.js';
 import prismarine_items from 'prismarine-item';
 import { pathfinder } from 'mineflayer-pathfinder';
 import { plugin as pvp } from 'mineflayer-pvp';
@@ -8,6 +10,7 @@ import { plugin as collectblock } from 'mineflayer-collectblock';
 import { plugin as autoEat } from 'mineflayer-auto-eat';
 import plugin from 'mineflayer-armor-manager';
 const armorManager = plugin;
+const { Titles } = prismarineAuth;
 let mc_version = settings.minecraft_version;
 let mcdata = null;
 let Item = null;
@@ -53,19 +56,47 @@ export const WOOL_COLORS = [
 
 
 export function initBot(username) {
+    const account = settings.account_id ? getAccount(settings.account_id) : null;
+    if (settings.account_id && !account) {
+        throw new Error('所选账号不存在，请在控制台的账号配置中重新选择');
+    }
+    if (account?.type === 'microsoft' && !accountCacheExists(account.id)) {
+        throw new Error('所选 Microsoft 账号尚未登录，请在控制台的账号配置中重新登录');
+    }
+
     const options = {
-        username: username,
+        username: account
+            ? (account.type === 'microsoft' ? account.id : account.name)
+            : username,
         host: settings.host,
         port: settings.port,
-        auth: settings.auth,
+        auth: account
+            ? (account.type === 'microsoft' ? 'microsoft' : 'offline')
+            : settings.auth,
         version: mc_version,
         checkTimeoutInterval: 60000,  // 60s keep-alive check (default 30s) — reduces disconnects on slow servers
+    };
+    if (account?.type === 'microsoft') {
+        options.profilesFolder = getAccountCacheDir(account.id);
+        options.authTitle = Titles.MinecraftNintendoSwitch;
+        options.deviceType = 'Nintendo';
+        options.flow = 'live';
     }
     if (!mc_version || mc_version === "auto") {
         delete options.version;
     }
 
     const bot = createBot(options);
+
+    // prismarine-physics uses the double 0.3 as the player half width. Recent
+    // strict-collision servers reject upward movement when the client box is
+    // exactly flush with a block face, which looks like the bot refusing to
+    // jump onto a one-block step. Leave a tiny positive gap instead (0.302 vs
+    // the vanilla 0.3) so the server accepts the jump. See PaperMC/Paper
+    // discussion #13653 and PrismarineJS/mineflayer issue #3911.
+    if (bot.physics) {
+        bot.physics.playerHalfWidth = 0.302;
+    }
 
     // Throttle position packets to avoid kicks on Paper/Spigot servers
     // Paper enforces stricter packet rate limits than vanilla, causing ECONNRESET

@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import process from 'node:process';
 import { logoutAgent } from '../mindcraft/mindserver.js';
 
 const init_agent_path = fileURLToPath(new URL('./init_agent.js', import.meta.url));
@@ -13,6 +14,8 @@ export class AgentProcess {
     start(load_memory=false, init_message=null, count_id=0) {
         this.count_id = count_id;
         this.running = true;
+        this.stopping = false;
+        this.cancelled = false;
 
         let args = [init_agent_path, this.name];
         args.push('-n', this.name);
@@ -32,8 +35,14 @@ export class AgentProcess {
         agentProcess.on('exit', (code, signal) => {
             console.log(`Agent process exited with code ${code} and signal ${signal}`);
             this.running = false;
+            const intentionalStop = this.stopping;
+            this.stopping = false;
             logoutAgent(this.name);
-            
+
+            if (intentionalStop) {
+                return;
+            }
+
             if (code > 1) {
                 console.log(`Ending task`);
                 process.exit(code);
@@ -59,8 +68,21 @@ export class AgentProcess {
     }
 
     stop() {
-        if (!this.running) return;
-        this.process.kill('SIGINT');
+        if (!this.running || !this.process) return;
+        const processRef = this.process;
+        this.stopping = true;
+        processRef.kill('SIGINT');
+        setTimeout(() => {
+            if (this.running && this.process === processRef) {
+                console.warn(`Agent ${this.name} did not stop in time; force killing.`);
+                processRef.kill('SIGKILL');
+            }
+        }, 5000);
+    }
+
+    cancel() {
+        this.cancelled = true;
+        this.stop();
     }
 
     forceRestart() {
@@ -73,6 +95,9 @@ export class AgentProcess {
 
             this.process.once('exit', () => {
                  clearTimeout(restartTimeout);
+                 if (this.cancelled) {
+                     return;
+                 }
                  console.log(`Stopped hanging agent ${this.name}. Now restarting.`);
                  this.start(true, 'Agent process restarted.', this.count_id);
             });

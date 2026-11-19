@@ -40,6 +40,12 @@
             }
         }
     },
+    "account_id": {
+        "type": "string",
+        "label": "账号",
+        "description": "选择离线或 Microsoft 账号；留空使用认证方式设置",
+        "default": ""
+    },
     "minecraft_version": {
         "type": "string",
         "label": "Minecraft 版本",
