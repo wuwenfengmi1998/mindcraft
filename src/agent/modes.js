@@ -284,38 +284,17 @@ const modes_list = [
     },
     {
         name: 'idle_staring',
-        description: 'Animation to look around at entities when idle.',
+        description: 'Look at nearby entities when idle.',
         interrupts: [],
         on: true,
         active: false,
-
-        staring: false,
-        last_entity: null,
-        next_change: 0,
         update: function (agent) {
             const entity = agent.bot.nearestEntity();
-            let entity_in_view = entity && entity.position.distanceTo(agent.bot.entity.position) < 10 && entity.name !== 'enderman';
-            if (entity_in_view && entity !== this.last_entity) {
-                this.staring = true;
-                this.last_entity = entity;
-                this.next_change = Date.now() + Math.random() * 1000 + 4000;
-            }
-            if (entity_in_view && this.staring) {
+            const entity_in_view = entity && entity.position.distanceTo(agent.bot.entity.position) < 10 && entity.name !== 'enderman';
+            if (entity_in_view) {
                 let isbaby = entity.type !== 'player' && entity.metadata[16];
                 let height = isbaby ? entity.height/2 : entity.height;
                 agent.bot.lookAt(entity.position.offset(0, height, 0));
-            }
-            if (!entity_in_view)
-                this.last_entity = null;
-            if (Date.now() > this.next_change) {
-                // look in random direction
-                this.staring = Math.random() < 0.3;
-                if (!this.staring) {
-                    const yaw = Math.random() * Math.PI * 2;
-                    const pitch = (Math.random() * Math.PI/2) - Math.PI/4;
-                    agent.bot.look(yaw, pitch, false);
-                }
-                this.next_change = Date.now() + Math.random() * 10000 + 2000;
             }
         }
     },
