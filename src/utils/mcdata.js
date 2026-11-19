@@ -94,9 +94,18 @@ export function initBot(username) {
     // jump onto a one-block step. Leave a tiny positive gap instead (0.302 vs
     // the vanilla 0.3) so the server accepts the jump. See PaperMC/Paper
     // discussion #13653 and PrismarineJS/mineflayer issue #3911.
-    if (bot.physics) {
-        bot.physics.playerHalfWidth = 0.302;
-    }
+    //
+    // mineflayer injects its internal plugins (including physics) on the async
+    // 'inject_allowed' event, so bot.physics does not exist yet when createBot()
+    // returns. Applying the value synchronously here would be a silent no-op.
+    const applyPhysicsCollisionFix = () => {
+        if (bot.physics) {
+            bot.physics.playerHalfWidth = 0.302;
+        }
+    };
+    applyPhysicsCollisionFix();
+    bot.once('inject_allowed', applyPhysicsCollisionFix);
+    bot.once('login', applyPhysicsCollisionFix);
 
     // Throttle position packets to avoid kicks on Paper/Spigot servers
     // Paper enforces stricter packet rate limits than vanilla, causing ECONNRESET

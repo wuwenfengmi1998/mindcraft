@@ -1613,6 +1613,37 @@ export async function goToPosition(bot, x, y, z, min_distance=2) {
         log(bot, `Missing coordinates, given x:${x} y:${y} z:${z}`);
         return false;
     }
+    // The pathfinder's goal is the block the bot's feet occupy. If the caller
+    // asks to stand exactly at a solid block (closeness 0), no path can satisfy
+    // it: the server rejects every attempt to move into the block, which looks
+    // like the bot is stuck on the block's edge. Snap the goal to the top of
+    // the column instead, but only for blocks with a full footprint (logs,
+    // stone, slabs, stairs, ...), not thin obstacles such as doors or fences.
+    if (min_distance <= 0) {
+        const gx = Math.floor(x);
+        const gy = Math.floor(y);
+        const gz = Math.floor(z);
+        const goalBlock = bot.blockAt(new Vec3(gx, gy, gz), false);
+        const hasFullFootprint = goalBlock?.shapes?.some(shape =>
+            shape[0] <= 0.001 && shape[3] >= 0.999 &&
+            shape[2] <= 0.001 && shape[5] >= 0.999
+        );
+        if (goalBlock && goalBlock.boundingBox === 'block' && hasFullFootprint) {
+            let standY = gy;
+            while (standY < gy + 4) {
+                const feetBlock = bot.blockAt(new Vec3(gx, standY, gz), false);
+                if (!feetBlock || feetBlock.boundingBox !== 'block') break;
+                standY++;
+            }
+            const topBlock = bot.blockAt(new Vec3(gx, standY, gz), false);
+            if (topBlock && topBlock.boundingBox === 'block') {
+                log(bot, `Target ${x}, ${y}, ${z} is inside ${goalBlock.name}; no free space above within 4 blocks. Choose a different target.`);
+                return false;
+            }
+            log(bot, `Target ${x}, ${y}, ${z} is inside ${goalBlock.name}; using the top at ${gx}, ${standY}, ${gz}.`);
+            y = standY;
+        }
+    }
     if (bot.modes.isOn('cheat')) {
         bot.chat('/tp @s ' + x + ' ' + y + ' ' + z);
         log(bot, `Teleported to ${x}, ${y}, ${z}.`);
